@@ -1,4 +1,8 @@
-//
+/*
+ - ch4
+ - rsatest.c
+ - RSA 키를 생성하고, 파일을 암호화와 복호화
+*/
 #include <sys/time.h>
 #include <time.h>
 #include <stdio.h>

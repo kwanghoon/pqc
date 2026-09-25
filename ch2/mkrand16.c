@@ -14,12 +14,12 @@
 
 #define MAXBUFF 128
 
-void printStr(void *buf, int size)
+void printStr(const unsigned char *buf, int size)
 {
     int i;
 
     for(i = 0; i < size; i++)
-    printf("%02x", ((unsigned char *)buf)[i]);
+    printf("%02x", buf[i]);
     printf("\n");
 }
 
@@ -35,7 +35,7 @@ void getTimeSubstr(char buff[])
 int main(void)
 {
     char seedbuf [MAXBUFF];
-    char randbuf [MAXBUFF];
+    unsigned char randbuf [MAXBUFF];
     getTimeSubstr(seedbuf);
     RAND_seed (seedbuf, 8);
     RAND_bytes (randbuf, 16);

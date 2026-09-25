@@ -1,3 +1,8 @@
+/*
+ - ch3
+ - aes_128_cbc.c
+ - AES-128 암호 알고리즘과 CBC 모드를 사용한 파일 암호화 및 복호화
+*/
 #include <sys/time.h>
 #include <time.h>
 #include <stdio.h>
