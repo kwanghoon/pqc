@@ -23,17 +23,20 @@ int main(int argc, char *argv[])
     DIR *dirp;
     struct dirent *dentry;
     struct stat statBuf;
-    int res;
-    assert(argc == 3);
-    assert(dirp = opendir("."));
+    char fpath [FNSZ];
+    int res, n;
+    assert(argc == 4);
+    assert(dirp = opendir(argv[3]));
     while((dentry = readdir(dirp)) != NULL)
         if (dentry->d_ino != 0) {
-            res = stat (dentry->d_name, &statBuf);
+            n = snprintf(fpath, FNSZ, "%s/%s", argv[3], dentry->d_name);
+            assert(n >= 0 && n < FNSZ);
+            res = stat (fpath, &statBuf);
         if(res == 0 && S_ISREG(statBuf.st_mode)) {
             if(strcmp(argv[1], "-i")==0)
-                hashNsign (argv[2], dentry->d_name);
+                hashNsign (argv[2], fpath);
             else if(strcmp(argv[1], "-c")==0)
-                verify(argv[2], dentry->d_name);
+                verify(argv[2], fpath);
             else
                 assert(0);
         }
@@ -134,13 +137,30 @@ void verify(char pubFile[], char fn[])
     RSA_free(rsaPub);
 }
 
+// fn이 위치한 디렉토리 아래에 .hash 디렉토리 경로(dirn)와
+// 그 안의 서명 파일 경로(sfn)를 만든다.
 void provideSubdir(char sfn[], char dirn[], char fn[])
 {
-    int n;
+    char *slash;
+    char *base;
+    int n, dirLen;
 
-    n = snprintf(dirn, FNSZ, "signatures");
-    assert(n >= 0 && n < FNSZ);
+    slash = strrchr(fn, '/');
+    if (slash != NULL) {
+        n = slash - fn;
+        assert(n < FNSZ);
+        memcpy(dirn, fn, n);
+        dirn[n] = '\0';
+        base = slash + 1;
+    } else {
+        strcpy(dirn, ".");
+        base = fn;
+    }
 
-    n = snprintf(sfn, FNSZ, "%s/%s.sig", dirn, fn);
+    dirLen = strlen(dirn);
+    n = snprintf(dirn + dirLen, FNSZ - dirLen, "/.hash");
+    assert(n >= 0 && n < FNSZ - dirLen);
+
+    n = snprintf(sfn, FNSZ, "%s/%s.sig", dirn, base);
     assert(n >= 0 && n < FNSZ);
 }
