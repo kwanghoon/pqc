@@ -13,6 +13,7 @@
 | `ch4/` | `rsatest.c` | RSA 키 생성 및 이를 이용한 파일 암호화/복호화 |
 | `ch4/` | `rsa_des_crc.c` | RSA와 DES-CRC를 조합한 전자 봉투(digital envelope) 구현 |
 | `ch5/` | `rsa_sha1_sign_test.c` | RSA와 SHA-1을 이용한 전자서명 생성 및 검증 |
+| `ch6/` | | 키 관리와 인증서 |
 | `ch7/` | `hash_sign.c` | 파일 해시 및 전자서명을 이용한 무결성 검증 |
 | `ch8/` | `client0.c`, `server0.c` | 소켓 기반 클라이언트/서버 통신 및 DES 암호화 예제 |
 | `ch9/` | `ssl_client.c`, `ssl_server.c` | OpenSSL `SSL`/`BIO` API를 이용한 SSL/TLS 클라이언트-서버 통신 |
