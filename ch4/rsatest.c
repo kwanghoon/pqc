@@ -80,7 +80,7 @@ void encryptRSAFile(RSA *rsaPub, char *pfn, char *cfn)
     psize = fread(ptext, 1, RSA_size(rsaPub) - 42, fp);
     fclose(fp);
 
-    csize = RSA_public_encrypt(psize, ptext, ctext, rsaPub, RSA_PKCS1_0AEP_PADDING);
+    csize = RSA_public_encrypt(psize, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING);
     assert(csize >= 0);
     fp = fopen(cfn, "wb");
     assert(fp);
@@ -102,7 +102,7 @@ void decryptRSAFile(RSA *rsaPriv, char *cfn, char *dfn)
     csize = fread(ctext, 1, MAXBUFF, fp);
     fclose(fp);
 
-    dsize = RSA_private_decrypt(csize, ctext, dtext, rsaPriv, RSA_PKCS1_0AEP_PADDING);
+    dsize = RSA_private_decrypt(csize, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING);
 
     assert(dsize >= 0);
 

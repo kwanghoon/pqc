@@ -79,7 +79,7 @@ void makeEnvelope (RSA *rsaPub, char *pfn, char *cfn)
     RAND_seed (seedbuff, 8);
     RAND_bytes (mykey, sizeof(mykey));  // EVP_MAX_KEY_LENGTH
     RAND_bytes (iv, EVP_MAX_IV_LENGTH);
-    csize = RSA_public_encrypt(psize, mykey, ctext, rsaPub, RSA_PKCS1_0AEP_PADDING);
+    csize = RSA_public_encrypt(psize, mykey, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING);
     ofp = fopen(cfn, "wb"); assert(ofp);
     fwrite(&csize, 1, sizeof(int), ofp);
     fwrite(ctext, 1, csize, ofp);

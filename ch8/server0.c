@@ -33,12 +33,12 @@ int main(void)
 
     memset(&server, 0, sizeof(struct sockaddr_in));
     server.sin_port = htons(9999); // cf. 9999
-    server.sin_family = AF_INET:
+    server.sin_family = AF_INET;
     server.sin_addr.s_addr= htonl (INADDR_ANY);
     sockfd_li = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd_li == -1) {
         perror("socket");
-        exit(EXIT FAILURE);
+        exit(EXIT_FAILURE);
     } 
     res = bind(sockfd_li, (struct sockaddr *)&server, SOCKSZ);
     if (res == -1) {
