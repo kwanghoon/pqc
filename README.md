@@ -12,7 +12,6 @@
 | `ch3/` | `aes_128_cbc.c` | AES-128 알고리즘과 CBC 모드를 이용한 파일 암호화/복호화 |
 | `ch4/` | `rsatest.c` | RSA 키 생성 및 이를 이용한 파일 암호화/복호화 |
 | `ch4/` | `rsa_des_crc.c` | RSA와 DES-CRC를 조합한 전자 봉투(digital envelope) 구현 |
-<!-- | `ch4/` | `oqs_rsatest.c` | liboqs(양자내성암호)와 OpenSSL EVP를 활용한 하이브리드 암호화 예제 | -->
 | `ch5/` | `rsa_sha1_sign_test.c` | RSA와 SHA-1을 이용한 전자서명 생성 및 검증 |
 | `ch7/` | `hash_sign.c` | 파일 해시 및 전자서명을 이용한 무결성 검증 |
 | `ch8/` | `client0.c`, `server0.c` | 소켓 기반 클라이언트/서버 통신 및 DES 암호화 예제 |
@@ -29,13 +28,6 @@ gcc -o ssl_client ch9/ssl_client.c -lssl -lcrypto
 gcc -o ssl_server ch9/ssl_server.c -lssl -lcrypto
 ```
 
-<!--
-`ch4/oqs_rsatest.c`는 [liboqs](https://github.com/open-quantum-safe/liboqs) 라이브러리가 추가로 필요합니다.
-
-```bash
-gcc -o oqs_rsatest ch4/oqs_rsatest.c -loqs -lcrypto
-```
--->
 
 ## 참고
 
