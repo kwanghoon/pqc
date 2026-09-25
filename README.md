@@ -45,6 +45,26 @@ gcc -o ssl_server ch9/ssl_server.c -lssl -lcrypto
 
 이 파일들은 `RSA_generate_key` 등 1.1.0에서 완전히 제거된 API를 사용하므로 **OpenSSL 1.1.0 이상에서는 컴파일이 되지 않으며**, 빌드하려면 OpenSSL 1.0.2 계열(또는 호환 레이어)이 필요합니다.
 
+## 빌드 방법
+
+```
+wget https://www.openssl.org/source/old/1.0.2/openssl-1.0.2u.tar.gz
+
+tar xzf openssl-1.0.2u.tar.gz
+cd openssl-1.0.2u
+
+export PQCHOME= YOUR PQC HOME DIRECTORY
+
+./config --prefix=$PQCHOME/openssl-1.0.2u --openssldir=$PQCHOME/openssl-1.0.2u
+
+make -j$(nproc)
+make install
+
+$PQCHOME/openssl-1.0.2u/bin/openssl version
+
+OpenSSL 1.0.2u  20 Dec 2019
+```
+
 ## 참고
 
 - 예제 코드는 학습 목적으로 작성되었으며, 일부 API(`RSA_generate_key`, `DES` 등)는 최신 OpenSSL 버전에서 사용이 권장되지 않거나 제거될 수 있습니다.
