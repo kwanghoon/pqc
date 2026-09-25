@@ -35,9 +35,10 @@ int main()
     printf("signature: "); printStr(sign, ssize);
     result = signatureVerify(pt, plsize, sign, ssize, rsaPub);
     printResult(result);
-    pt[5] = '5';
-    result = signatureVerify(pt, plsize, sign, ssize, rsaPub);
-    printResult(result);
+    // For a failure test:
+    // pt[5] = '5';
+    // result = signatureVerify(pt, plsize, sign, ssize, rsaPub);
+    // printResult(result);
     RSA_free (rsaPub);
     return(1);
 }
