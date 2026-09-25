@@ -10,3 +10,21 @@ gcc -o ssl_server ./ch9/ssl_server.c -I$OPENSSL102/include -L$OPENSSL102 -lssl -
 ```
 
 정적 라이브러리(`libssl.a`, `libcrypto.a`)로 링크하므로 `-ldl -lpthread`가 추가로 필요합니다.
+
+```
+./ssl_server &
+./ssl_client
+GET / HTTP/1.0
+
+HTTP/1.0 200 OK
+Content-type: text/plain
+
+
+Connection Established
+Request headers:
+
+GET / HTTP/1.0
+
+-----------------------------------
+
+```
