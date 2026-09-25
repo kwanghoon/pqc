@@ -28,25 +28,40 @@ void getTimeSubstr(unsigned char *buff)
 }
 
 void makeEnvelope (RSA *rsaPub, char *pfn, char *cfn);
+void openEnvelope (RSA *rsaPriv, char *cfn, char *dfn);
 
 RSA *readRSAKeyFile(char *pubKeyFn)
 {
     FILE *fp;
     RSA *rsaPub;
-    fp = fopen(pubKeyFn, "rb"); assert(fp);
-    rsaPub = PEM_read_RSA_PUBKEY(fp, NULL, NULL, NULL);
-    assert(rsaPub);
+    fp = fopen(pubKeyFn, "rb"); assert(fp != NULL);
+    rsaPub = PEM_read_RSAPublicKey(fp, NULL, NULL, NULL);
+    assert(rsaPub != NULL);
     fclose(fp);
     return (rsaPub);
 }
 
+RSA *readRSAPrivKeyFile(char *privKeyFn)
+{
+    FILE *fp;
+    RSA *rsaPriv;
+    fp = fopen(privKeyFn, "rb"); assert(fp != NULL);
+    rsaPriv = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
+    assert(rsaPriv != NULL);
+    fclose(fp);
+    return (rsaPriv);
+}
+
 int main(int argc, char *argv[])
 {
-    RSA *rsaPub;
-    assert (argc == 4);
+    RSA *rsaPub, *rsaPriv;
+    assert (argc == 6);
     rsaPub = readRSAKeyFile(argv[1]);
-    makeEnvelope(rsaPub, argv[2], argv[3]);
+    rsaPriv = readRSAPrivKeyFile(argv[2]);
+    makeEnvelope(rsaPub, argv[3], argv[4]);
+    openEnvelope(rsaPriv, argv[4], argv[5]);
     RSA_free(rsaPub);
+    RSA_free(rsaPriv);
     return(0);
 }
 
@@ -97,6 +112,45 @@ void makeEnvelope (RSA *rsaPub, char *pfn, char *cfn)
     res = EVP_CipherFinal_ex(&ctx, ctext, &csize);
     assert(res);
     fwrite(ctext, 1, csize, ofp);
+    fclose(ifp);
+    fclose(ofp);
+}
+
+// openEnvelope
+//
+// makeEnvelope로 만든 봉투(cfn)를 rsaPriv로 열어
+// 평문을 dfn에 기록한다.
+
+void openEnvelope (RSA *rsaPriv, char *cfn, char *dfn)
+{
+    FILE *ifp, *ofp;
+    unsigned char ptext [MAXBUFF];
+    unsigned char ctext [MAXBUFF];
+    int csize, psize;
+    unsigned char mykey [16] = "\0";
+    unsigned char iv [EVP_MAX_IV_LENGTH] = "\0";
+    EVP_CIPHER_CTX ctx;
+    int res;
+
+    ifp = fopen(cfn, "rb"); assert(ifp);
+    fread(&csize, 1, sizeof(int), ifp);
+    fread(ctext, 1, csize, ifp);
+    res = RSA_private_decrypt(csize, ctext, mykey, rsaPriv, RSA_PKCS1_OAEP_PADDING);
+    assert(res == sizeof(mykey));
+    fread(iv, 1, sizeof(iv), ifp);
+
+    ofp = fopen(dfn, "wb"); assert(ofp);
+    EVP_CIPHER_CTX_init(&ctx);
+    EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_DECRYPT);
+    csize = fread(ctext, 1, MAXBUFF, ifp);
+    while (csize > 0){
+        res = EVP_CipherUpdate(&ctx, ptext, &psize, ctext, csize); assert(res);
+        fwrite(ptext, 1, psize, ofp);
+        csize = fread(ctext, 1, MAXBUFF, ifp);
+    }
+    res = EVP_CipherFinal_ex(&ctx, ptext, &psize);
+    assert(res);
+    fwrite(ptext, 1, psize, ofp);
     fclose(ifp);
     fclose(ofp);
 }

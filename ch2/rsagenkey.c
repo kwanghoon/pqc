@@ -44,8 +44,8 @@ int main(void)
         return(2);
     }
 
-    pubf = fopen("pubkey.pem", "w"); assert(pubf);
-    privf = fopen("privkey.pem", "w"); assert(privf);
+    pubf = fopen("pubKey.pem", "w"); assert(pubf);
+    privf = fopen("privKey.pem", "w"); assert(privf);
 
     if(!PEM_write_RSAPublicKey(pubf, rsaPub))
         fprintf(stderr, "writing public key to a file fails.\n");
