@@ -17,16 +17,6 @@
 | `ch8/` | `client0.c`, `server0.c` | 소켓 기반 클라이언트/서버 통신 및 DES 암호화 예제 |
 | `ch9/` | `ssl_client.c`, `ssl_server.c` | OpenSSL `SSL`/`BIO` API를 이용한 SSL/TLS 클라이언트-서버 통신 |
 
-## 빌드 방법
-
-각 예제는 OpenSSL 라이브러리(`libssl`, `libcrypto`)에 의존합니다. 예시:
-
-```bash
-gcc -o mkrand16 ch2/mkrand16.c  -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
-export LD_LIBRARY_PATH=$OPENSSL102:$LD_LIBRARY_PATH; mkrand16
-```
-
-
 ## OpenSSL 호환성
 
 `ch2`, `ch3`, `ch4/rsatest.c`, `ch4/rsa_des_crc.c`, `ch5`, `ch7`, `ch8`, `ch9`의 예제는 OpenSSL **0.9.8 ~ 1.0.2** 시절의 API 관례로 작성되어 있으며, 아래와 같은 근거로 유추할 수 있습니다.
@@ -67,7 +57,15 @@ $OPENSSL102/apps/openssl version
 OpenSSL 1.0.2u  20 Dec 2019
 ```
 
+## 빌드 방법
+
+각 예제는 OpenSSL 라이브러리(`libssl`, `libcrypto`)에 의존합니다. 예시:
+
+```bash
+gcc -o mkrand16 ch2/mkrand16.c  -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
+export LD_LIBRARY_PATH=$OPENSSL102:$LD_LIBRARY_PATH; mkrand16
+```
+
 ## 참고
 
-- 예제 코드는 학습 목적으로 작성되었으며, 일부 API(`RSA_generate_key`, `DES` 등)는 최신 OpenSSL 버전에서 사용이 권장되지 않거나 제거될 수 있습니다.
-- 실무 환경에서는 최신 권장 알고리즘과 API(`EVP` 인터페이스 등)를 사용하시기 바랍니다.
+- 예제 코드는 최신 OpenSSL 버전에서 사용이 권장되지 않습니다.
