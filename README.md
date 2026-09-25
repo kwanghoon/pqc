@@ -22,10 +22,8 @@
 각 예제는 OpenSSL 라이브러리(`libssl`, `libcrypto`)에 의존합니다. 예시:
 
 ```bash
-gcc -o mkrand16 ch2/mkrand16.c -lcrypto
-gcc -o aes_128_cbc ch3/aes_128_cbc.c -lcrypto
-gcc -o ssl_client ch9/ssl_client.c -lssl -lcrypto
-gcc -o ssl_server ch9/ssl_server.c -lssl -lcrypto
+gcc -o mkrand16 ch2/mkrand16.c  -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
+export LD_LIBRARY_PATH=$OPENSSL102:$LD_LIBRARY_PATH; mkrand16
 ```
 
 
@@ -45,23 +43,27 @@ gcc -o ssl_server ch9/ssl_server.c -lssl -lcrypto
 
 이 파일들은 `RSA_generate_key` 등 1.1.0에서 완전히 제거된 API를 사용하므로 **OpenSSL 1.1.0 이상에서는 컴파일이 되지 않으며**, 빌드하려면 OpenSSL 1.0.2 계열(또는 호환 레이어)이 필요합니다.
 
-## 빌드 방법
+## openssl-1.0.2u 설치 방법
+
+openssl-1.0.2u 소스를 내려받아 빌드하고 설치하는 방법 (윈도우즈 WSL 우분투)
 
 ```
 wget https://www.openssl.org/source/old/1.0.2/openssl-1.0.2u.tar.gz
 
 tar xzf openssl-1.0.2u.tar.gz
 cd openssl-1.0.2u
+export OPENSSL102=`pwd`
 
-export PQCHOME= YOUR PQC HOME DIRECTORY
-
-./config --prefix=$PQCHOME/openssl-1.0.2u --openssldir=$PQCHOME/openssl-1.0.2u
+./config --prefix=$OPENSSL102 --openssldir=$OPENSSL102
 
 make -j$(nproc)
 make install
 
-$PQCHOME/openssl-1.0.2u/bin/openssl version
+$OPENSSL102/apps/openssl version
+```
 
+버전 텍스트
+```
 OpenSSL 1.0.2u  20 Dec 2019
 ```
 
