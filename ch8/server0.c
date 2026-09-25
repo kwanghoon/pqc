@@ -50,7 +50,7 @@ int main(void)
         sockfd = accept(sockfd_li, NULL, NULL);
         assert(sockfd >= 0);
         res = recv(sockfd, &cipherBSz, sizeof(int), 0);
-        res = recv(sockfd, &buff, cipherBSz, 0); // cf. BUFFSZ
+        res = recv(sockfd, &buff, BUFFSZ, 0); // cf. cipherBSz
         assert(res == cipherBSz);
 
         gettimeofday(&myTime, NULL);

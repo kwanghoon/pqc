@@ -5,7 +5,14 @@
 ```bash
 export OPENSSL102=/home/khchoi/work/pqc/openssl-1.0.2u
 
-gcc -o client0 client0.c -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
-gcc -o server0 server0.c -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
+gcc -o client0 ./ch8/client0.c -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
+gcc -o server0 ./ch8/server0.c -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
 ```
 
+```
+cp ./ch8/symmKey.sec .
+./server0 &
+./client0
+```
+
+성공하면 connected 메시지를 출력

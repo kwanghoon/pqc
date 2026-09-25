@@ -38,7 +38,7 @@ int main(void)
 
     bzero(buff, BUFFSZ);
     gettimeofday(&timeStamp, NULL);
-    fd = open("symmkey.sec", O_RDONLY); assert(fd != -1 ) ;
+    fd = open("symmKey.sec", O_RDONLY); assert(fd != -1 ) ;
     res = read(fd, rawkey, 8); assert (res == 8) ;
     close(fd);
     DES_set_key(&rawkey, &keySched);
