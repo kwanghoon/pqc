@@ -31,13 +31,77 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- `RSA_generate_key(512, ...)`
-- `EVP_sha1()`
+현재 API 패턴(소스 코드 기준):
+- `RSA_generate_key(512, RSA_F4, NULL, NULL)`
+  - `512`: 서명용 RSA 키 비트 길이
+  - `RSA_F4`: 공개지수
+  - `NULL`: 콜백 인자 없음
+- `EVP_PKEY_new()`
+  - 서명 키 객체를 생성하는 함수
+- `EVP_PKEY_set1_RSA(pkey, rsaPriv)`
+  - `pkey`: 키 객체 포인터
+  - `rsaPriv`: RSA 개인키 포인터
+- `EVP_MD_CTX_init(&ctx)`
+  - `&ctx`: 해시-서명 컨텍스트 초기화
+- `EVP_SignInit_ex(&ctx, EVP_sha1(), NULL)`
+  - `&ctx`: 서명 컨텍스트
+  - `EVP_sha1()`: SHA-1 해시 함수
+  - `NULL`: 엔진 없음
+- `EVP_SignUpdate(&ctx, plaintext, plsize)`
+  - `plaintext`: 서명 대상 메시지 버퍼
+  - `plsize`: 메시지 길이
+- `EVP_SignFinal(&ctx, sign, signSize, pkey)`
+  - `sign`: 서명 결과 저장 버퍼
+  - `signSize`: 서명 길이 포인터
+  - `pkey`: 서명에 사용할 개인키
+- `EVP_VerifyInit_ex(&ctx, EVP_sha1(), NULL)`
+  - `EVP_sha1()`: 검증에 사용할 해시 함수
+- `EVP_VerifyUpdate(&ctx, plaintext, plsize)`
+  - 서명 검증 대상 메시지 입력
+- `EVP_VerifyFinal(&ctx, sign, signSize, pukey)`
+  - `sign`: 서명 값
+  - `signSize`: 서명 길이
+  - `pukey`: 검증용 공개키
 
-전환 후:
-- `ML-DSA` 또는 `SLH-DSA` 기반 서명
-- 해시 파라미터는 서명 알고리즘에 따라 정해진 안전 해시 사용
+기존 매개변수-역할 정리:
+- `512`: RSA 키 길이
+- `RSA_F4`: 공개 지수
+- `pkey` / `pukey`: 서명용 키 객체
+- `rsaPriv` / `rsaPub`: 개인키/공개키 객체
+- `ctx`: 서명/검증 상태를 유지하는 컨텍스트
+- `EVP_sha1()`: 해시 함수 선택
+- `plaintext` / `sign`: 서명 생성과 검증 대상 메시지와 결과값
+- `plsize` / `signSize`: 메시지 길이와 서명 길이
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *sctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
+  - `EVP_PKEY_ML_DSA`: 양자내성 서명 알고리즘
+- `EVP_PKEY_sign_init(sctx)`
+  - `sctx`: 서명용 컨텍스트
+- `EVP_PKEY_sign(sctx, sig, &siglen, msg, msglen, key)`
+  - `sig`: 서명 결과 버퍼
+  - `&siglen`: 서명 길이
+  - `msg`: 서명 대상 메시지
+  - `msglen`: 메시지 길이
+  - `key`: 개인키
+- `EVP_PKEY_CTX *vctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
+  - 검증용 컨텍스트
+- `EVP_PKEY_verify_init(vctx)`
+  - `vctx`: 검증용 컨텍스트
+- `EVP_PKEY_verify(vctx, sig, siglen, msg, msglen, pkey)`
+  - `pkey`: 공개키
+  - `msg` / `msglen`: 검증 대상 값
+  - `sig` / `siglen`: 서명 값과 길이
+- `EVP_PKEY_CTX_set_security_bits(sctx, 256)`
+  - `256`: 보안 강도 지정
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_DSA`: 서명 알고리즘 선택
+- `sctx` / `vctx`: 서명 및 검증 시간의 컨텍스트
+- `sig` / `siglen`: 서명 값과 길이
+- `msg` / `msglen`: 서명 대상 메시지와 길이
+- `key` / `pkey`: 서명용 개인키와 검증용 공개키
+- `256`: 보안 강도
 
 권장 구성:
 - 서명이 필요한 애플리케이션은 양자내성 서명 알고리즘을 기본으로 사용

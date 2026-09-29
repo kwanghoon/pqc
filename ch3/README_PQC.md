@@ -33,15 +33,83 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- `EVP_aes_128_cbc()`
-- 키 길이 128비트
-- CBC 모드
+현재 API 패턴(소스 코드 기준):
+- `RAND_bytes(mykey, 16)`
+  - `mykey`: 대칭키 저장 버퍼
+  - `16`: 키 길이(128비트)
+- `RAND_bytes(iv, 16)`
+  - `iv`: 초기화 벡터(IV) 저장 버퍼
+  - `16`: IV 길이(128비트)
+- `EVP_CIPHER_CTX_init(&ctx)`
+  - `&ctx`: 초기화할 OpenSSL 암호 컨텍스트 포인터
+- `EVP_CipherInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv, AES_ENCRYPT)`
+  - `&ctx`: 암호화 컨텍스트
+  - `EVP_aes_128_cbc()`: AES-128-CBC 알고리즘 선택
+  - `NULL`: 엔진 지정 없음
+  - `key`: 암호화 키 포인터
+  - `iv`: IV 포인터
+  - `AES_ENCRYPT`: 암호화 모드
+- `EVP_CipherInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv, AES_DECRYPT)`
+  - `&ctx`: 복호화 컨텍스트
+  - `EVP_aes_128_cbc()`: 암호화 알고리즘 선택
+  - `key`: 동일 키 사용
+  - `iv`: 동일 IV 사용
+  - `AES_DECRYPT`: 복호화 모드
+- `EVP_CipherUpdate(&ctx, cipherbuff, &out_len, plainbuff, in_len)`
+  - `&ctx`: 동작 중인 컨텍스트
+  - `cipherbuff`: 출력 버퍼
+  - `&out_len`: 출력 길이 저장 주소
+  - `plainbuff`: 입력 평문 버퍼
+  - `in_len`: 입력 크기
+- `EVP_CipherFinal_ex(&ctx, cipherbuff, &out_len)`
+  - `&ctx`: 최종 블록 처리용 컨텍스트
+  - `cipherbuff`: 최종 출력 버퍼
+  - `&out_len`: 최종 출력 길이
+- `EVP_CIPHER_CTX_cleanup(&ctx)`
+  - `&ctx`: 정리할 컨텍스트
 
-전환 후:
-- `AES-256-GCM` 또는 `AES-256-CTR` 중심의 대칭암호 선택
-- 인증 태그 기반의 무결성 보장
-- 키 교환은 ML-KEM으로 대체
+기존 매개변수-역할 정리:
+- `mykey`: 대칭 암호 키, 16바이트 길이
+- `iv`: CBC 모드의 초기화 벡터, 16바이트 길이
+- `ctx`: 암호화/복호화 상태 저장 객체
+- `key`: 현재 암호화 키 포인터
+- `iv`: 현재 IV 포인터
+- `AES_ENCRYPT` / `AES_DECRYPT`: 동작 모드
+- `plainbuff` / `cipherbuff`: 입력-출력 버퍼
+- `in_len` / `out_len`: 입력 및 출력 길이
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
+  - `EVP_PKEY_ML_KEM`: 양자내성 키 교환 알고리즘
+  - `NULL`: 엔진 없음
+- `EVP_PKEY_encapsulate_init(kctx)`
+  - `kctx`: 키 캡슐화 컨텍스트
+- `EVP_PKEY encapsulate(kctx, out, &outlen, pubkey)`
+  - `out`: 캡슐화된 세션 키 버퍼
+  - `&outlen`: 세션 키 길이
+  - `pubkey`: 수신자 공개키
+- `EVP_CIPHER_CTX_init(&dem_ctx)`
+  - `&dem_ctx`: DEM(대칭암호) 컨텍스트
+- `EVP_EncryptInit_ex(&dem_ctx, EVP_aes_256_gcm(), NULL, session_key, iv)`
+  - `EVP_aes_256_gcm()`: AES-256-GCM 선택
+  - `session_key`: KEM으로 전달된 세션 키
+  - `iv`: nonce/IV
+- `EVP_EncryptUpdate(&dem_ctx, outbuf, &outlen, inbuf, inlen)`
+  - `outbuf`: 암호문 출력 버퍼
+  - `inbuf`: 평문 입력 버퍼
+- `EVP_EncryptFinal_ex(&dem_ctx, outbuf + outlen, &final_len)`
+  - 최종 블록 처리 및 인증 태그 생성
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_KEM`: 양자내성 키 교환 알고리즘 식별자
+- `kctx`: 키 캡슐화/복호화용 컨텍스트
+- `out`: 생성된 세션 키 또는 캡슐화 결과
+- `outlen`: 결과 길이
+- `pubkey`: 수신자 공개키
+- `session_key`: KEM으로 생성된 대칭 세션 키
+- `iv`: IV 또는 nonce
+- `dem_ctx`: 대칭 암호 연산 컨텍스트
+- `EVP_aes_256_gcm()`: 인증 가능한 안전한 대칭 알고리즘
 
 권장 전환 구조:
 - 키 교환과 암호화가 분리된 KEM + DEM 구조

@@ -33,14 +33,72 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- `RSA *rsaPriv`, `RSA *rsaPub`
-- `EVP_sha1()`
+현재 API 패턴(소스 코드 기준):
+- `RSA *rsaPriv = NULL;` / `RSA *rsaPub = NULL;`
+  - `rsaPriv`: 개인키 객체
+  - `rsaPub`: 공개키 객체
+- `rsaPriv = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);`
+  - `fp`: 개인키 파일 포인터
+  - `NULL, NULL, NULL`: 비밀번호/프롬프트 인자 생략
+- `rsaPub = PEM_read_RSAPublicKey(fp, NULL, NULL, NULL);`
+  - `fp`: 공개키 파일 포인터
+- `pkey = EVP_PKEY_new();`
+  - `pkey`: OpenSSL 키 객체
+- `EVP_PKEY_set1_RSA(pkey, rsaPriv)`
+  - `pkey`: 키 객체
+  - `rsaPriv`: RSA 개인키
+- `EVP_MD_CTX_init(&ctx)`
+  - `&ctx`: 해시-서명 컨텍스트 초기화
+- `EVP_SignInit_ex(&ctx, EVP_sha1(), NULL)`
+  - `EVP_sha1()`: SHA-1 해시 함수 선택
+  - `NULL`: 엔진 사용 없음
+- `EVP_SignUpdate(&ctx, buff, inLen)`
+  - `buff`: 파일 버퍼
+  - `inLen`: 읽은 바이트 수
+- `EVP_SignFinal(&ctx, sign, &signSize, pkey)`
+  - `sign`: 서명 결과 버퍼
+  - `&signSize`: 서명 길이 저장 위치
+  - `pkey`: 서명 키
+- `EVP_VerifyInit_ex(&ctx, EVP_sha1(), NULL)`
+  - 서명 검증에 사용할 해시 함수 지정
+- `EVP_VerifyFinal(&ctx, sign, signSize, pkey)`
+  - `sign`: 서명 값
+  - `signSize`: 서명 값 길이
+  - `pkey`: 검증용 키
 
-전환 후:
-- `ML-DSA` 또는 `SLH-DSA` 기반 서명 알고리즘 선택
-- 파일 무결성 체크는 서명 알고리즘에 맞는 안전한 해시 파라미터 사용
-- 서명/검증 매개변수는 애플리케이션 설정에서 명시적으로 관리
+기존 매개변수-역할 정리:
+- `rsaPriv` / `rsaPub`: RSA 개인키와 공개키 객체
+- `pkey`: 서명/검증에 적재되는 OpenSSL 키 객체
+- `ctx`: 서명/검증의 상태 저장 컨텍스트
+- `EVP_sha1()`: 해시 함수 결정
+- `buff` / `inLen`: 파일 내용을 담는 버퍼와 그 길이
+- `sign` / `signSize`: 서명 값과 길이
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *sctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
+  - `EVP_PKEY_ML_DSA`: 양자내성 서명 알고리즘 선택
+- `EVP_PKEY_sign_init(sctx)`
+  - `sctx`: 서명용 컨텍스트
+- `EVP_PKEY_sign(sctx, sig, &siglen, msg, msglen, key)`
+  - `sig`: 서명 값 저장 버퍼
+  - `&siglen`: 서명 길이
+  - `msg`: 파일 해시 또는 원문
+  - `msglen`: 입력 길이
+  - `key`: 개인키
+- `EVP_PKEY_verify_init(vctx)`
+  - `vctx`: 검증용 컨텍스트
+- `EVP_PKEY_verify(vctx, sig, siglen, msg, msglen, pkey)`
+  - `pkey`: 검증용 공개키
+- `EVP_PKEY_CTX_set_security_bits(sctx, 256)`
+  - `256`: 보안 강도
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_DSA`: 서명 알고리즘 선택
+- `sctx` / `vctx`: 서명/검증용 컨텍스트
+- `sig` / `siglen`: 서명 결과와 길이
+- `msg` / `msglen`: 검증 대상 메시지와 길이
+- `key` / `pkey`: 개인키와 공개키
+- `256`: 보안 강도 값
 
 권장 사항:
 - 해당 애플리케이션이 자료 무결성을 검증하는 용도라면 서명 알고리즘을 기본 PQC로 전환한다.

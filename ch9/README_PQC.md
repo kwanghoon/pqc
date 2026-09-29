@@ -32,15 +32,64 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- `SSLv23_client_method()`, `SSLv23_server_method()`
-- `SSL_CTX_new(meth)`
-- 인증서 체인 로딩 및 개인키 로딩
+현재 API 패턴(소스 코드 기준):
+- `meth = SSLv23_client_method();` / `meth = SSLv23_server_method();`
+  - `meth`: TLS/SSL 메서드 객체
+  - `SSLv23_*`: 1.0.2 시대의 범용 메서드 선택
+- `ctx = SSL_CTX_new(meth);`
+  - `ctx`: TLS 컨텍스트 객체
+  - `meth`: 사용할 연결 방식 선택
+- `SSL_CTX_use_certificate_chain_file(ctx, "BobCert.pem")`
+  - `ctx`: TLS 컨텍스트
+  - `"BobCert.pem"`: 인증서 체인 파일 경로
+- `SSL_CTX_use_PrivateKey_file(ctx, "BobPriv.pem", SSL_FILETYPE_PEM)`
+  - `ctx`: TLS 컨텍스트
+  - `"BobPriv.pem"`: 개인키 파일 경로
+  - `SSL_FILETYPE_PEM`: PEM 포맷 지정
+- `SSL_CTX_check_private_key(ctx)`
+  - `ctx`: 키와 인증서의 일치 여부 검증
+- `BIO_new_ssl_connect(ctx)` / `BIO_new_accept("4433")`
+  - TLS 연결을 위한 BIO 구성
+  - `"4433"`: 포트 번호
+- `SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY)`
+  - `ssl`: SSL 객체
+  - `SSL_MODE_AUTO_RETRY`: 중단된 I/O 재시도 모드
 
-전환 후:
-- `TLS_method()` 또는 `TLS_client_method()` / `TLS_server_method()` 기반 설정
-- PQC 호환 그룹을 지원하는 TLS 1.3 구성
-- 하이브리드 키 교환 또는 순수 PQC 키 교환 알고리즘 선택
+기존 매개변수-역할 정리:
+- `meth`: 어떤 TLS/SSL 메서드를 사용할지 결정
+- `ctx`: 전체 TLS 보안 정책과 인증서 설정을 담는 컨텍스트
+- `"BobCert.pem"`: 서버 인증서 경로
+- `"BobPriv.pem"`: 서버 개인키 경로
+- `SSL_FILETYPE_PEM`: PEM 형식 키 인코딩 지정
+- `ssl`: 실제 연결 세션 객체
+- `SSL_MODE_AUTO_RETRY`: I/O 재시도 동작 설정
+- `"4433"`: 연결 포트
+
+목표 API 패턴(권장):
+- `SSL_CTX *ctx = SSL_CTX_new(TLS_method());`
+  - `TLS_method()`: 최신 TLS 메서드 연결
+- `SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION)`
+  - `ctx`: TLS 컨텍스트
+  - `TLS1_3_VERSION`: 최소 프로토콜 버전
+- `SSL_CTX_set_ciphersuites(ctx, "TLS_AES_256_GCM_SHA384:...")`
+  - `ctx`: TLS 컨텍스트
+  - `"TLS_AES_256_GCM_SHA384:..."`: 허용되는 TLS 1.3 암호 스위트 목록
+- `SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:secp256r1")`
+  - `ctx`: TLS 컨텍스트
+  - `"X25519MLKEM768:secp256r1"`: 혼합형 키 교환 그룹 목록
+- `SSL_CTX_use_certificate_file(ctx, "pqc_server_cert.pem", SSL_FILETYPE_PEM)`
+  - 인증서 파일 경로 변경
+- `SSL_CTX_use_PrivateKey_file(ctx, "pqc_server_key.pem", SSL_FILETYPE_PEM)`
+  - 양자내성 키 또는 하이브리드 키 사용
+
+목표 매개변수-역할 정리:
+- `TLS_method()`: 최신 TLS 프로토콜 선택
+- `TLS1_3_VERSION`: 최소 버전 제한
+- `ctx`: 모든 필수 보안 정책을 담는 컨텍스트
+- `ciphersuites`: 허용 가능한 암호 스위트
+- `groups`: 키 교환 그룹 선택
+- `"X25519MLKEM768:secp256r1"`: 하이브리드 키 교환 조합 예시
+- `pqc_server_cert.pem` / `pqc_server_key.pem`: PQC 인증서와 키 파일
 
 권장 방식:
 - 서버와 클라이언트가 동일한 보안 정책 집합을 사용해야 한다.

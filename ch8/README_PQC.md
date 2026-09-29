@@ -32,15 +32,71 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- `DES_set_key()`
-- `DES_ncbc_encrypt()`
-- 타임스탬프를 암호화하는 단순 구조
+현재 API 패턴(소스 코드 기준):
+- `fd = open("symmKey.sec", O_RDONLY);` / `read(fd, rawkey, 8);`
+  - `symmKey.sec`: 공용 키 파일
+  - `rawkey`: DES 키 저장 버퍼
+  - `8`: DES 키 길이
+- `DES_set_key(&rawkey, &keySched)`
+  - `&rawkey`: 입력 키
+  - `&keySched`: 확장된 DES 키 스케줄
+- `DES_ncbc_encrypt((unsigned char *)&timeStamp, buff, sizeof(struct timeval), &keySched, (DES_cblock *)iv, DES_ENCRYPT)`
+  - `(unsigned char *)&timeStamp`: 평문 타임스탬프 포인터
+  - `buff`: 암호문 출력 버퍼
+  - `sizeof(struct timeval)`: 입력 길이
+  - `&keySched`: DES 키 스케줄
+  - `(DES_cblock *)iv`: IV
+  - `DES_ENCRYPT`: 암호화 모드
+- `DES_ncbc_encrypt(buff, (unsigned char *)&timeStamp, cipherBSz, &keySched, &iv, DES_DECRYPT)`
+  - `buff`: 암호문 입력 버퍼
+  - `&timeStamp`: 복호화 결과 출력 위치
+  - `cipherBSz`: 암호문 길이
+  - `&keySched`: DES 키 스케줄
+  - `&iv`: IV
+  - `DES_DECRYPT`: 복호화 모드
+- `cipherBSz = multiple8(sizeof(struct timeval));`
+  - `sizeof(struct timeval)`: 원문 길이
+  - `multiple8()`: DES 블록 크기 8에 맞춰 길이를 정렬
 
-전환 후:
-- KEM으로 세션 키 교환
-- DEM은 `AES-256-GCM` 또는 `AES-256-CTR`
-- 인증에는 서명/검증 또는 키 기반 인증 방식 도입
+기존 매개변수-역할 정리:
+- `rawkey`: 8바이트 DES 키
+- `keySched`: DES 연산을 위해 확장된 키 상태
+- `timeStamp`: 인증 대상 타임스탬프
+- `buff`: 암호문 또는 복호문 버퍼
+- `iv`: DES CBC용 초기화 벡터
+- `cipherBSz`: 암호문의 블록 단위 길이
+- `DES_ENCRYPT` / `DES_DECRYPT`: 암호화/복호화 모드
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
+  - `EVP_PKEY_ML_KEM`: 키 교환 알고리즘 선택
+- `EVP_PKEY_encapsulate_init(kctx)`
+  - `kctx`: 세션 키 캡슐화용 컨텍스트
+- `EVP_PKEY_encapsulate(kctx, encap, &encaplen, peer_pub)`
+  - `encap`: 캡슐화된 세션 키
+  - `&encaplen`: 캡슐화 결과 길이
+  - `peer_pub`: 상대 공개키
+- `EVP_CIPHER_CTX_init(&dem_ctx)`
+  - `&dem_ctx`: 대칭 암호 컨텍스트
+- `EVP_EncryptInit_ex(&dem_ctx, EVP_aes_256_gcm(), NULL, session_key, nonce)`
+  - `EVP_aes_256_gcm()`: 대칭 암호 알고리즘
+  - `session_key`: KEM으로 생성된 세션 키
+  - `nonce`: nonce/IV
+- `EVP_EncryptUpdate(&dem_ctx, out, &outlen, msg, msglen)`
+  - `out`: 암호문 결과 버퍼
+  - `msg`: 평문 메시지
+- `EVP_EncryptFinal_ex(&dem_ctx, out + outlen, &finlen)`
+  - 최종 태그/블록 처리 수행
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_KEM`: 양자내성 키 교환 선택
+- `kctx`: KEM 컨텍스트
+- `encap` / `encaplen`: 캡슐화된 세션 키와 길이
+- `peer_pub`: 상대 공개키
+- `session_key`: KEM으로 생성한 대칭키
+- `nonce`: 대칭암호의 IV/nonce
+- `dem_ctx`: 대칭암호 연산 상태
+- `EVP_aes_256_gcm()`: 인증과 기밀성을 함께 제공하는 현대 대칭암호
 
 권장 구조:
 - 클라이언트와 서버는 각각 공개키와 개인키를 가진다.

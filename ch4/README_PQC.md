@@ -32,14 +32,84 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- RSA 키 생성 및 공개키 암호화
-- DES/3DES 기반 데이터 암호화
+현재 API 패턴(소스 코드 기준):
+- `RSA_generate_key(1024, RSA_F4, NULL, NULL)`
+  - `1024`: RSA 키 길이
+  - `RSA_F4`: 공개지수 값
+  - `NULL`: 콜백 인자 없음
+- `PEM_write_RSAPrivateKey(fp, *rsaPriv, NULL, NULL, 0, NULL, NULL)`
+  - `fp`: 개인키 파일 포인터
+  - `*rsaPriv`: 생성된 RSA 개인키 포인터
+  - `NULL, NULL, 0, NULL, NULL`: 비밀번호/문자열 인자 값
+- `PEM_write_RSAPublicKey(fp, *rsaPub)`
+  - `fp`: 공개키 파일 포인터
+  - `*rsaPub`: 공개키 객체
+- `RSA_public_encrypt(psize, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING)`
+  - `psize`: 평문 길이
+  - `ptext`: 평문 버퍼
+  - `ctext`: 암호문 버퍼
+  - `rsaPub`: 공개키 객체
+  - `RSA_PKCS1_OAEP_PADDING`: OAEP 패딩 방식
+- `RSA_private_decrypt(csize, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING)`
+  - `csize`: 암호문 길이
+  - `ctext`: 암호문 버퍼
+  - `dtext`: 복호화된 평문 버퍼
+  - `rsaPriv`: 개인키 객체
+  - `RSA_PKCS1_OAEP_PADDING`: OAEP 패딩 방식
+- `RAND_bytes(mykey, sizeof(mykey))`
+  - `mykey`: 세션 키 버퍼
+  - `sizeof(mykey)`: 키 길이
+- `RAND_bytes(iv, EVP_MAX_IV_LENGTH)`
+  - `iv`: IV 버퍼
+  - `EVP_MAX_IV_LENGTH`: 최대 IV 길이
+- `EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_ENCRYPT)`
+  - `EVP_des_ede_cbc()`: 3DES-CBC 알고리즘
+  - `mykey`: 세션 키
+  - `iv`: IV
+  - `DES_ENCRYPT`: 암호화 모드
+- `EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_DECRYPT)`
+  - `mykey`와 `iv`로 복호화 수행
 
-전환 후:
-- KEM: ML-KEM
-- DEM: AES-256-GCM 또는 AES-256-CTR
-- 캐리어 데이터는 키와 함께 필요한 메타데이터를 포함
+기존 매개변수-역할 정리:
+- `1024`: RSA 비트 길이
+- `RSA_F4`: RSA 공개지수
+- `RSA_PKCS1_OAEP_PADDING`: RSA 패딩 규격
+- `psize` / `csize`: 평문/암호문 길이
+- `mykey`: 대칭 세션 키
+- `iv`: 대칭 암호의 초기화 벡터
+- `EVP_des_ede_cbc()`: 3DES-CBC 선택
+- `DES_ENCRYPT` / `DES_DECRYPT`: 암호화/복호화 모드
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
+  - `EVP_PKEY_ML_KEM`: 양자내성 키 교환 알고리즘
+- `EVP_PKEY_encapsulate_init(kctx)`
+  - `kctx`: KEM 캡슐화용 컨텍스트
+- `EVP_PKEY_encapsulate(kctx, out, &outlen, pubkey)`
+  - `out`: 캡슐화된 키 결과
+  - `&outlen`: 결과 길이
+  - `pubkey`: 수신자 공개키
+- `EVP_PKEY_decapsulate_init(dctx)`
+  - `dctx`: KEM 복호화용 컨텍스트
+- `EVP_PKEY_decapsulate(dctx, session_key, &slen, encap, elen, privkey)`
+  - `session_key`: 복원된 세션 키
+  - `&slen`: 세션 키 길이
+  - `encap`: 캡슐화된 키값
+  - `elen`: 캡슐화된 키 길이
+  - `privkey`: 개인키
+- `EVP_EncryptInit_ex(&dem_ctx, EVP_aes_256_gcm(), NULL, session_key, iv)`
+  - `EVP_aes_256_gcm()`: 안전한 대칭 알고리즘
+  - `session_key`: KEM으로 생성된 세션 키
+  - `iv`: nonce
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_KEM`: 키 교환 알고리즘 선택
+- `kctx` / `dctx`: 캡슐화/복호화 컨텍스트
+- `out` / `encap`: KEM의 결과값
+- `outlen` / `elen`: 결과 길이
+- `session_key`: DEM에 사용할 대칭 세션 키
+- `iv`: DEM 사용 IV/nonce
+- `EVP_aes_256_gcm()`: 인증과 기밀성을 함께 제공하는 대칭암호
 
 권장 구조:
 - 암호화된 세션 키를 KEM으로 생성

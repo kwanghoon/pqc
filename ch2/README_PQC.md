@@ -32,19 +32,71 @@
 
 ### (1) 알고리즘/매개변수 설정
 
-현재:
-- RSA 512 비트
-- 기본 `RSA_F4` 공개지수
-- OpenSSL 1.0.2의 구식 RSA API
+현재 API 패턴(소스 코드 기준):
+- `RAND_seed(seedbuf, 8)`
+  - `seedbuf`: 타임스탬프 값을 복사해 만든 128바이트 버퍼의 시작 포인터
+  - `8`: 시드에 사용되는 바이트 수, 여기서는 8바이트를 사용
+- `RAND_bytes(randbuf, 16)`
+  - `randbuf`: 난수 저장 버퍼 포인터
+  - `16`: 생성할 난수 바이트 수
+- `RSA_generate_key(512, RSA_F4, NULL, NULL)`
+  - `512`: RSA 키 비트 길이
+  - `RSA_F4`: 공개지수 값으로 65537(= 2^16 + 1) 사용
+  - `NULL`: 콜백 함수 포인터
+  - `NULL`: 콜백 인자
+- `RSAPublicKey_dup(rsaPriv)`
+  - `rsaPriv`: 기존 개인키 포인터
+  - 역할: 개인키에서 공개키를 복제해서 파일로 저장
+- `PEM_write_RSAPublicKey(pubf, rsaPub)`
+  - `pubf`: 공개키 파일 포인터
+  - `rsaPub`: 공개키 객체 포인터
+- `PEM_write_RSAPrivateKey(privf, rsaPriv, NULL, NULL, 0, NULL, NULL)`
+  - `privf`: 개인키 파일 포인터
+  - `rsaPriv`: 개인키 객체 포인터
+  - `NULL, NULL, 0, NULL, NULL`: 암호화 비밀번호/프롬프트 관련 인자, 현재는 사용하지 않음
 
-대상:
-- ML-KEM 기반 키 교환
-- ML-DSA 또는 SLH-DSA 기반 서명
-- 연산 파라미터(모드, 공개키 길이, 해시 알고리즘) 명시
+기존 매개변수-역할 정리:
+- `seedbuf`: 난수 시드의 입력값으로 사용되는 임시 데이터
+- `8`: 시드 크기(바이트)
+- `randbuf`: 생성된 난수 결과 저장 위치
+- `16`: 생성할 난수 길이
+- `512`: RSA 키의 길이(양자 취약점 때문에 매우 작은 값)
+- `RSA_F4`: RSA 공개지수 선택값
+- `rsaPriv`: 개인키 객체
+- `rsaPub`: 공개키 객체
+- `pubf`, `privf`: 키를 파일로 기록하는 목적의 파일 핸들
+
+목표 API 패턴(권장):
+- `EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
+  - `EVP_PKEY_ML_KEM`: 양자내성 키교환 알고리즘 식별자
+  - `NULL`: 기본 엔진 사용
+- `EVP_PKEY_keygen_init(ctx)`
+  - `ctx`: 키 생성 컨텍스트
+- `EVP_PKEY_generate(ctx, &pkey)`
+  - `pkey`: 생성된 키 객체 저장 위치
+- `EVP_PKEY_CTX_set_group_name(ctx, "ML-KEM-768")`
+  - `ctx`: 키 생성 컨텍스트
+  - `"ML-KEM-768"`: 키 교환 파라미터 그룹 이름
+- `EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL)` 또는 `EVP_PKEY_CTX_new_id(EVP_PKEY_SLH_DSA, NULL)`
+  - `EVP_PKEY_ML_DSA` / `EVP_PKEY_SLH_DSA`: 양자내성 서명 알고리즘 식별자
+- `EVP_PKEY_sign_init(ctx)` / `EVP_PKEY_verify_init(ctx)`
+  - `ctx`: 서명/검증용 컨텍스트
+- `EVP_PKEY_CTX_set_security_bits(ctx, 256)`
+  - `ctx`: 알고리즘 컨텍스트
+  - `256`: 보안 강도(비트 기준)
+
+목표 매개변수-역할 정리:
+- `EVP_PKEY_ML_KEM`: 키 전송 알고리즘 선택
+- `EVP_PKEY_ML_DSA` / `EVP_PKEY_SLH_DSA`: 서명 알고리즘 선택
+- `ctx`: 알고리즘별 실행 컨텍스트
+- `pkey`: 생성된 공개키/개인키 객체
+- `"ML-KEM-768"`: 보안 파라미터 그룹 선택
+- `256`: 목표 보안 강도 값
+- `NULL`: 엔진/가변 인자 사용하지 않음
 
 권장 전환:
-- 적용 대상 애플리케이션이 키 교환을 수행하는 경우: ML-KEM
-- 서명이 필요한 경우: ML-DSA
+- 적용 대상 애플리케이션이 키 교환을 수행하는 경우: `ML-KEM`
+- 서명이 필요한 경우: `ML-DSA` 또는 `SLH-DSA`
 - 하이브리드 운영이 필요한 경우: 기존 RSA를 유지하되 PQC 알고리즘을 병행 적용
 
 ### (2) 키 준비
