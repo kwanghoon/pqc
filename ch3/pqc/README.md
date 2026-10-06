@@ -82,3 +82,21 @@
 
 이 전환 버전은 원본의 파일 암호화/복호화 흐름을 유지하면서, OpenSSL 3.x API 규격으로 바꾸고 동시에 AES-256 기준을 반영한 버전이다. 즉, “동작 유지”와 “PQC 전환 목표 반영”을 함께 만족한다.
 
+## 빌드 및 실행 방법
+
+OpenSSL 3.5.8이 `<프로젝트 경로>/openssl-3.5.8/install`에 설치되어 있다고 가정한다. 아래 명령의 `<프로젝트 경로>`를 실제 프로젝트의 절대 경로로 바꾼다.
+
+```sh
+export OPENSSL358=<프로젝트 경로>/openssl-3.5.8/install
+echo "$OPENSSL358"
+
+cd ch3/pqc
+gcc -o pqc_aes_256_cbc pqc_aes_256_cbc.c \
+    -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
+
+export LD_LIBRARY_PATH="$OPENSSL358/lib64:$LD_LIBRARY_PATH"
+./pqc_aes_256_cbc ../foo.txt foo.enc foo.dec
+diff ../foo.txt ./foo.dec
+```
+
+`diff`에서 출력이 없으면 복호화한 `foo.dec`가 원본 `../foo.txt`와 일치한다.
