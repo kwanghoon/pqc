@@ -195,3 +195,22 @@ export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
 
 - 실행하면 16바이트 난수가 hex 문자열(32자)로 출력된다.
 - 시스템에 따라 라이브러리 경로가 `lib64` 대신 `lib`일 수 있다.
+
+## pqc_mldsa_genkey.c (rsagenkey.c 전환본)
+
+[../rsagenkey.c](../rsagenkey.c)의 RSA-512 키 생성을 ML-DSA-65(FIPS 204) 키 생성으로 바꾼 [pqc_mldsa_genkey.c](pqc_mldsa_genkey.c)이다. 서명용 키이므로 ML-DSA를 선택했다(암호화/키 합의용 ML-KEM 키 생성은 [ch4](../../ch4/pqc/pqc_mlkem_envelope.c) 참고).
+
+- `RSA_generate_key`, `RSAPublicKey_dup`, `RAND_seed` 제거 → `EVP_PKEY_CTX_new_from_name("ML-DSA-65")` + `EVP_PKEY_keygen`
+- 공개키는 `PEM_write_PUBKEY`(`BEGIN PUBLIC KEY`), 개인키는 `PEM_write_PrivateKey`(PKCS#8)로 저장하고 개인키 파일 권한은 0600
+- `assert` 대신 오류 메시지와 종료 코드 사용
+- 생성한 키는 ch7 `pqc_hash_sign`, ch5 `pqc_mldsa_sign_test`에서 그대로 사용할 수 있다.
+
+```bash
+export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
+export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
+
+cd ch2/pqc
+gcc -o pqc_mldsa_genkey pqc_mldsa_genkey.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lcrypto
+./pqc_mldsa_genkey              # pubKey.pem, privKey.pem 생성
+./pqc_mldsa_genkey pub.pem priv.pem   # 파일명 지정
+```

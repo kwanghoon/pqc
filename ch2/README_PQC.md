@@ -15,7 +15,7 @@
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
 | [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | `RAND_bytes()` → OpenSSL 3.x `RAND_priv_bytes_ex()` (libctx 사용) |
-| [rsagenkey.c](rsagenkey.c) | (전환본 없음) | RSA 키 생성은 아직 PQC로 전환되지 않음 |
+| [rsagenkey.c](rsagenkey.c) | [pqc/pqc_mldsa_genkey.c](pqc/pqc_mldsa_genkey.c) | RSA-512 키 쌍 → ML-DSA-65 키 쌍 (`EVP_PKEY_keygen`), SPKI/PKCS#8 PEM, 개인키 권한 0600, 출력 파일명을 인자로 지정 |
 
 ## 2. 현재 취약 암호 사용
 
