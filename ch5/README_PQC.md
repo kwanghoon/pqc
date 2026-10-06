@@ -10,6 +10,14 @@
 
 이 구조는 RSA와 SHA-1 조합을 사용하므로 양자적 위협과 해시 안전성 관점에서 전환이 필요하다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [rsa_sha1_sign_test.c](rsa_sha1_sign_test.c) | [pqc/pqc_mldsa_sign_test.c](pqc/pqc_mldsa_sign_test.c) | RSA-512 + SHA-1 서명 → ML-DSA-65 서명 (별도 해시 선택 없음), `EVP_DigestSign`/`EVP_DigestVerify` 사용 |
+
+실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
 ## 2. 현재 취약 암호 사용
 
 - 서명 알고리즘: RSA
