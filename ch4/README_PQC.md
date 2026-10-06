@@ -1,188 +1,75 @@
-# PQC 전환 계획: ch4 - RSA 파일 암호화/복호화 및 RSA+DES 봉투
+# ch4 PQC 파일 암호화 예제
 
-## 1. 전환 목적
+## 목적
 
-이 장은 [ch4/rsatest.c](rsatest.c)와 [ch4/rsa_des_crc.c](rsa_des_crc.c)에서 다음을 구현한다.
+[rsatest.c](rsatest.c)는 RSA 공개키로 파일 내용을 직접 암호화하고 개인키로 복호화하는 예제다. RSA는 양자 컴퓨터 공격에 취약하고, 공개키 암호화는 처리 가능한 입력 크기도 제한적이다.
 
-- 공개키 암호화로 파일을 암호화하고 개인키로 복호화
-- RSA로 대칭키를 암호화하고 DES 또는 3DES로 실제 데이터 암호화
-- 전자 봉투 구조를 사용해 키와 데이터 분리
+[pqc/pqc_mlkem_file.c](pqc/pqc_mlkem_file.c)는 이 흐름을 ML-KEM 기반 키 캡슐화와 AES-256-GCM 파일 암호화로 대체한다. RSA 암호 관련 API는 사용하지 않는다.
 
-이 구조는 양자 컴퓨터 공격에 취약한 RSA 기반 봉투와 DES 기반 대칭 암호를 사용하므로 PQC 전환이 반드시 필요하다.
+## 원본과 전환본
 
-## 2. 현재 취약 암호 사용
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [rsatest.c](rsatest.c) | [pqc/pqc_mlkem_file.c](pqc/pqc_mlkem_file.c) | RSA-OAEP 직접 암호화 → ML-KEM-768 + AES-256-GCM |
+| [rsa_des_crc.c](rsa_des_crc.c) | [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c) | RSA + 3DES-CBC 전자 봉투 → ML-KEM-768 + AES-256-GCM 봉투 |
 
-- RSA 1024비트 키 생성
-- `RSA_public_encrypt()` / `RSA_private_decrypt()`
-- `RSA_PKCS1_OAEP_PADDING`
-- DES/3DES 기반 대칭 암호
+## 암호화 흐름
 
-문제점:
-- RSA가 양자 공격에 취약하다.
-- DES/3DES는 취약한 대칭 알고리즘이며, 현대 표준보다 보안 수준이 낮다.
-- 키와 데이터 암호화가 분리되어 있으나, 현재 구조는 양자내성 보장 없이 설계되었다.
+1. OpenSSL 3.5.8의 `ML-KEM-768`으로 임시 키 쌍을 생성한다.
+2. `EVP_PKEY_encapsulate_init()`과 `EVP_PKEY_encapsulate()`로 공유 비밀과 KEM 암호문을 만든다.
+3. 공유 비밀의 32바이트 키를 사용하고, `RAND_bytes()`로 생성한 12바이트 nonce와 함께 `EVP_aes_256_gcm()`으로 입력 파일을 암호화한다.
+4. 봉투 파일에 KEM 암호문, nonce, AES-GCM 암호문 및 16바이트 인증 태그를 기록한다.
+5. `EVP_PKEY_decapsulate_init()`과 `EVP_PKEY_decapsulate()`로 공유 비밀을 복원한 뒤, 인증 태그를 검증하며 AES-GCM 복호화를 수행한다.
 
-## 3. 전환 목표
+봉투 형식은 다음 순서다.
 
-- RSA 기반 키 봉투 구조를 KEM 기반 봉투 구조로 변경
-- 실제 데이터 암호화는 AES-256-GCM 또는 AES-256-CTR로 수행
-- 공개키/개인키 관리와 키 식별을 PQC 방식에 맞게 재정의
+| 필드 | 크기 |
+|---|---:|
+| 매직 값 `PQM1` | 4바이트 |
+| KEM 암호문 길이 | 4바이트 (big-endian) |
+| ML-KEM 암호문 | 길이 필드에 지정된 크기 |
+| AES-GCM nonce | 12바이트 |
+| AES-GCM 암호문 | 나머지 데이터에서 태그 크기를 뺀 길이 |
+| AES-GCM 인증 태그 | 16바이트 |
 
-## 4. 5단계 전환 계획
+인증 태그 검증에 실패하면 복호화는 실패하며 부분 출력 파일을 제거한다.
 
-### (1) 알고리즘/매개변수 설정
+## 빌드 및 실행
 
-현재 API 패턴(소스 코드 기준):
-- `RSA_generate_key(1024, RSA_F4, NULL, NULL)`
-  - `1024`: RSA 키 길이
-  - `RSA_F4`: 공개지수 값
-  - `NULL`: 콜백 인자 없음
-- `PEM_write_RSAPrivateKey(fp, *rsaPriv, NULL, NULL, 0, NULL, NULL)`
-  - `fp`: 개인키 파일 포인터
-  - `*rsaPriv`: 생성된 RSA 개인키 포인터
-  - `NULL, NULL, 0, NULL, NULL`: 비밀번호/문자열 인자 값
-- `PEM_write_RSAPublicKey(fp, *rsaPub)`
-  - `fp`: 공개키 파일 포인터
-  - `*rsaPub`: 공개키 객체
-- `RSA_public_encrypt(psize, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING)`
-  - `psize`: 평문 길이
-  - `ptext`: 평문 버퍼
-  - `ctext`: 암호문 버퍼
-  - `rsaPub`: 공개키 객체
-  - `RSA_PKCS1_OAEP_PADDING`: OAEP 패딩 방식
-- `RSA_private_decrypt(csize, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING)`
-  - `csize`: 암호문 길이
-  - `ctext`: 암호문 버퍼
-  - `dtext`: 복호화된 평문 버퍼
-  - `rsaPriv`: 개인키 객체
-  - `RSA_PKCS1_OAEP_PADDING`: OAEP 패딩 방식
-- `RAND_bytes(mykey, sizeof(mykey))`
-  - `mykey`: 세션 키 버퍼
-  - `sizeof(mykey)`: 키 길이
-- `RAND_bytes(iv, EVP_MAX_IV_LENGTH)`
-  - `iv`: IV 버퍼
-  - `EVP_MAX_IV_LENGTH`: 최대 IV 길이
-- `EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_ENCRYPT)`
-  - `EVP_des_ede_cbc()`: 3DES-CBC 알고리즘
-  - `mykey`: 세션 키
-  - `iv`: IV
-  - `DES_ENCRYPT`: 암호화 모드
-- `EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_DECRYPT)`
-  - `mykey`와 `iv`로 복호화 수행
+아래 예시는 OpenSSL 3.5.8이 `/home/khchoi/work/pqc/openssl-3.5.8/install`에 설치된 환경을 기준으로 한다. `pqc_mlkem_file.c`는 `../foo.txt`를 입력으로 사용하므로 `ch4/pqc` 디렉터리에서 실행한다.
 
-기존 매개변수-역할 정리:
-- `1024`: RSA 비트 길이
-- `RSA_F4`: RSA 공개지수
-- `RSA_PKCS1_OAEP_PADDING`: RSA 패딩 규격
-- `psize` / `csize`: 평문/암호문 길이
-- `mykey`: 대칭 세션 키
-- `iv`: 대칭 암호의 초기화 벡터
-- `EVP_des_ede_cbc()`: 3DES-CBC 선택
-- `DES_ENCRYPT` / `DES_DECRYPT`: 암호화/복호화 모드
+```sh
+export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
+cd /home/khchoi/work/pqc/ch4/pqc
 
-목표 API 패턴(권장):
-- `EVP_PKEY_CTX *kctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
-  - `EVP_PKEY_ML_KEM`: 양자내성 키 교환 알고리즘
-- `EVP_PKEY_encapsulate_init(kctx)`
-  - `kctx`: KEM 캡슐화용 컨텍스트
-- `EVP_PKEY_encapsulate(kctx, out, &outlen, pubkey)`
-  - `out`: 캡슐화된 키 결과
-  - `&outlen`: 결과 길이
-  - `pubkey`: 수신자 공개키
-- `EVP_PKEY_decapsulate_init(dctx)`
-  - `dctx`: KEM 복호화용 컨텍스트
-- `EVP_PKEY_decapsulate(dctx, session_key, &slen, encap, elen, privkey)`
-  - `session_key`: 복원된 세션 키
-  - `&slen`: 세션 키 길이
-  - `encap`: 캡슐화된 키값
-  - `elen`: 캡슐화된 키 길이
-  - `privkey`: 개인키
-- `EVP_EncryptInit_ex(&dem_ctx, EVP_aes_256_gcm(), NULL, session_key, iv)`
-  - `EVP_aes_256_gcm()`: 안전한 대칭 알고리즘
-  - `session_key`: KEM으로 생성된 세션 키
-  - `iv`: nonce
+gcc -o pqc_mlkem_file pqc_mlkem_file.c \
+    -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
 
-목표 매개변수-역할 정리:
-- `EVP_PKEY_ML_KEM`: 키 교환 알고리즘 선택
-- `kctx` / `dctx`: 캡슐화/복호화 컨텍스트
-- `out` / `encap`: KEM의 결과값
-- `outlen` / `elen`: 결과 길이
-- `session_key`: DEM에 사용할 대칭 세션 키
-- `iv`: DEM 사용 IV/nonce
-- `EVP_aes_256_gcm()`: 인증과 기밀성을 함께 제공하는 대칭암호
+export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+./pqc_mlkem_file
+diff ../foo.txt ./pqc_mlkem_file.dec
+```
 
-권장 구조:
-- 암호화된 세션 키를 KEM으로 생성
-- 실제 파일을 DEM으로 암호화
-- 키 ID, nonce, 알고리즘 ID를 캡슐화 헤더에 포함
+정상 실행 시 `pqc_mlkem_file.enc`와 `pqc_mlkem_file.dec`가 생성된다. `diff` 출력이 없으면 복호화 결과가 입력 파일과 일치한다.
 
-### (2) 키 준비
+이 예제는 시연을 위해 키 쌍을 매 실행마다 메모리에서 생성하고 같은 실행 중 복호화한다. 개인키를 저장하거나 봉투와 함께 배포하지 않으므로, 생성된 봉투는 다음 실행에서 복호화할 수 없다.
 
-현재:
-- RSA 공개키/개인키를 생성하고 파일로 저장
-- `RSA_private_decrypt()`로 봉투를 열음
+## 전자 봉투 예제
 
-전환 후:
-- KEM 키 쌍 생성
-- 공개키 분배, 개인키 보관
-- 인증서 또는 통신 상대 식별 정보와 연결
+[rsa_des_crc.c](rsa_des_crc.c)는 RSA로 3DES 세션 키를 보호하는 전자 봉투 예제다. 대응하는 [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c)는 RSA 대신 ML-KEM-768으로 AES-256 키를 캡슐화하고, 3DES-CBC 대신 AES-256-GCM으로 데이터를 암호화·인증한다. 봉투 헤더(매직 값, KEM 암호문, nonce)도 GCM의 추가 인증 데이터로 보호한다.
 
-중요:
-- 기존 `PEM_write_RSAPublicKey` 구조는 보존하되, 실제 알고리즘이 양자내성 키로 대체되어야 한다.
-- 키 로테이션을 통해 교체 주기 관리가 필요하다.
+인자는 원본과 동일하게 `공개키 개인키 평문 봉투 복호문` 순서다. 키 파일이 없으면 ML-KEM-768 키 쌍을 PEM(`PUBLIC KEY`, `PRIVATE KEY`)으로 생성하며, 개인키는 0600 권한으로 저장한다.
 
-### (3) 연산 초기화
+```sh
+export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
+cd /home/khchoi/work/pqc/ch4/pqc
 
-현재:
-- `RSA_public_encrypt()` / `RSA_private_decrypt()` 사용
-- `EVP_CIPHER_CTX_init()` 및 `EVP_CipherInit_ex()`로 DES 모드 초기화
+gcc -o pqc_mlkem_envelope pqc_mlkem_envelope.c \
+    -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
 
-전환 후:
-- KEM 캡슐화/복호화 컨텍스트 생성
-- DEM 암호화/복호화 컨텍스트 초기화
-- IV/nonce 값 생성 및 고정화
+export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+./pqc_mlkem_envelope mlkem_pub.pem mlkem_priv.pem ../plain.txt envelope.bin plain_out.txt
+diff ../plain.txt plain_out.txt
+```
 
-설계 포인트:
-- 기존 DES-IV 방식은 안전성이 낮으므로 nonce 기반 전환이 필요하다.
-- 암호화와 복호화 컨텍스트를 동일 알고리즘 및 파라미터 집합으로 맞춰야 한다.
-
-### (4) 연산 실행
-
-현재:
-- 파일 전체를 RSA로 직접 암호화하거나
-- 세션 키를 RSA로 보호 후 DES로 데이터 암호화
-
-전환 후:
-- KEM으로 세션 키 캡슐화
-- DEM으로 파일 암호화
-- 복호화는 KEM 복호화 → 세션 키 복원 → DEM 복호화 순서로 수행
-
-이전보다 중요한 점:
-- 서명 없이 암호화를 수행하는 경우 무결성 보장이 부족해질 수 있으므로 인증과 함께 설계한다.
-- 파일 크기가 커질수록 DEM을 분할 처리할 수 있는 구조를 준비해야 한다.
-
-### (5) 결과 처리
-
-현재:
-- 암호문 파일 생성
-- 복호화 후 평문 파일 생성
-
-전환 후:
-- 암호문 헤더에 알고리즘, 키 ID, nonce, 인증 태그 포함
-- 복호화 실패 시 명확한 로그 처리
-- 결과 파일 검증 및 메타데이터 체크
-
-권장 결과 처리:
-- 봉투 구조는 중앙 관리 시스템이 해석할 수 있는 정의를 가져야 한다.
-- 양자내성 전환 후에도 기존 파일 포맷과 하위 호환성 정책을 정리한다.
-
-## 5. 적용 우선순위
-
-1. RSA 암호화 경로를 KEM 기반 방식으로 교체
-2. DES/3DES 대칭 암호를 AES-GCM으로 대체
-3. 파일 봉투 구조를 KEM + DEM 형식으로 재정의
-4. 키 ID와 메타데이터를 포함한 결과 처리 체계 구축
-
-## 6. 요약
-
-이 장은 “RSA로 대칭키를 보호하고 DES로 데이터 보호”하는 구조를 보여주는 대표적인 레거시 예제이다. PQC 전환에서는 해당 구조 자체를 바꾸는 것이 핵심이며, 가장 자연스러운 형태는 KEM으로 세션키를 안전하게 전달하고 DEM으로 실제 데이터를 암호화하는 구조이다.
+봉투 형식은 `PQE1`(4바이트), KEM 암호문 길이(4바이트, big-endian), ML-KEM 암호문, nonce(12바이트), AES-GCM 암호문, 인증 태그(16바이트) 순서다. 인증에 실패하면 복호문 파일을 남기지 않는다.
