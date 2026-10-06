@@ -11,6 +11,14 @@
 
 이 구조는 RSA 기반 전자서명과 SHA-1 기반 해시를 사용하므로, 양자 컴퓨터 공격 대비와 해시 안전성 측면에서 전환이 필요하다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [hash_sign.c](hash_sign.c) | [pqc/pqc_hash_sign.c](pqc/pqc_hash_sign.c) | RSA + SHA-1 서명 → ML-DSA-65 서명, `EVP_DigestSign`/`EVP_DigestVerify` 사용, 키는 ML-DSA PEM |
+
+실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
 ## 2. 현재 취약 암호 사용
 
 - 키: RSA 개인키/공개키

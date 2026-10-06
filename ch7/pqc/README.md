@@ -1,44 +1,38 @@
-# PQC 비교 문서: hash_sign.c vs pqc_hash_sign.c
+# ch7 PQC 전환: hash_sign.c → pqc_hash_sign.c
 
-## 목적
+[../hash_sign.c](../hash_sign.c)(RSA + SHA-1 서명)를 ML-DSA-65 서명으로 전환한 예제 [pqc_hash_sign.c](pqc_hash_sign.c)이다.
 
-이 문서는 [../hash_sign.c](../hash_sign.c)와 [pqc_hash_sign.c](pqc_hash_sign.c)의 차이를 비교한다.
+## 변경 내용
 
-- 원본 동작 유지: 파일 해싱, 서명, 검증
-- SHA-1 의존 제거 및 SHA-256 사용
-- OpenSSL 3.x API로 정리
-- 비교 용도에 필요한 최소 변화만 반영
+| 항목 | 원본 | 전환본 |
+|---|---|---|
+| 서명 알고리즘 | RSA + SHA-1 | ML-DSA-65 (별도 해시 선택 없음) |
+| 개인키 읽기 | `PEM_read_RSAPrivateKey` | `PEM_read_PrivateKey` + `EVP_PKEY_is_a("ML-DSA-65")` |
+| 공개키 읽기 | `PEM_read_RSAPublicKey` | `PEM_read_PUBKEY` (SubjectPublicKeyInfo) |
+| 서명/검증 | `EVP_SignInit/Update/Final` (스트리밍) | `EVP_DigestSign` / `EVP_DigestVerify` (일괄 처리) |
+| 서명 크기 | 128바이트 (RSA-1024) | 3309바이트 (동적 할당) |
 
-## 비교용 diff
+ML-DSA는 스트리밍 해싱을 지원하지 않으므로 파일 전체를 메모리에 읽어 한 번에 서명한다. 대용량 파일에는 적합하지 않다.
+서명은 `<dir>/.hash/<파일명>.sig`에 저장되며, 검증이 하나라도 실패하면 종료 코드가 1이다.
 
-```diff
---- a/ch7/hash_sign.c
-+++ b/ch7/pqc/pqc_hash_sign.c
-@@
--    EVP_MD_CTX ctx;
-+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-@@
--    result = EVP_SignInit_ex(&ctx, EVP_sha1(), NULL);
-+    result = EVP_DigestSignInit(ctx, NULL, EVP_sha256(), NULL, pkey);
-@@
--    result = EVP_SignUpdate(&ctx, buff, inLen);
-+    result = EVP_DigestSignUpdate(ctx, buff, inLen);
-@@
--    result = EVP_SignFinal(&ctx, sign, &signSize, pkey);
-+    result = EVP_DigestSignFinal(ctx, NULL, &signSize);
-+    result = EVP_DigestSignFinal(ctx, sign, &signSize);
-@@
--    EVP_MD_CTX_cleanup(&ctx);
-+    EVP_MD_CTX_free(ctx);
+## 키 파일
+
+ML-DSA 키가 필요하므로 기존 RSA 키(`../privKey.pem`, `../pubKey.pem`)는 쓸 수 없다. 테스트용 키 `mldsa_priv.pem`, `mldsa_pub.pem`이 이 디렉터리에 있으며 다시 만들려면 다음과 같이 한다.
+
+```bash
+$OPENSSL358/bin/openssl genpkey -algorithm ML-DSA-65 -out mldsa_priv.pem
+$OPENSSL358/bin/openssl pkey -in mldsa_priv.pem -pubout -out mldsa_pub.pem
 ```
 
-## 변경 포인트
+## 빌드 및 실행 방법
 
-- 서명 API는 `EVP_Sign*` 계열에서 `EVP_DigestSign*` 계열로 바뀌었다.
-- 검증도 `EVP_Verify*`에서 `EVP_DigestVerify*`로 정리되었다.
-- 실제 예제는 `EVP_sha256()`로 고정되어 있어 SHA-1 의존을 제거했다.
-- 파일 무결성의 동작 자체는 동일하게 유지하면서, OpenSSL 3.x 현대화와 더 안전한 해시를 함께 반영했다.
+```bash
+export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
+export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
 
-## 결론
+cd ch7/pqc
+gcc -o pqc_hash_sign pqc_hash_sign.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lcrypto
 
-기존의 파일 무결성 로직을 유지하면서, OpenSSL 3.x 스타일로 정리하고 SHA-1 의존을 제거한 버전이다. 다만 RSA 기반 서명 자체는 원본 동작을 유지하는 수준에서 비교를 수행했다.
+./pqc_hash_sign -i mldsa_priv.pem sampledir   # 서명
+./pqc_hash_sign -c mldsa_pub.pem  sampledir   # 검증
+```
