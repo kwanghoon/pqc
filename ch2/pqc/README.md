@@ -177,3 +177,21 @@ static void printHex(const unsigned char *buf, size_t size)
 - OpenSSL 3.5.8 요구사항 반영
 - 코드 비교가 쉬운 구조 유지
 - 불필요한 부가 기능 제거
+
+## 빌드 및 실행 방법
+
+OpenSSL 3.5.8 설치는 [../../README_PQC.md](../../README_PQC.md)를 참고한다. 설치 후 `OPENSSL358` 환경 변수가 설정되어 있어야 한다.
+
+```bash
+export OPENSSL358=<프로젝트 경로>/openssl-3.5.8/install
+echo $OPENSSL358
+
+cd ch2/pqc
+gcc -o pqc_mkrand16 pqc_mkrand16.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lcrypto
+export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
+./pqc_mkrand16
+
+```
+
+- 실행하면 16바이트 난수가 hex 문자열(32자)로 출력된다.
+- 시스템에 따라 라이브러리 경로가 `lib64` 대신 `lib`일 수 있다.
