@@ -13,10 +13,6 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
-#define INPUT_FILE "../foo.txt"
-#define ENVELOPE_FILE "pqc_mlkem_file.enc"
-#define OUTPUT_FILE "pqc_mlkem_file.dec"
-
 #define KEM_CIPHERTEXT_MAX 2048
 #define KEM_SECRET_LEN 32
 #define GCM_NONCE_LEN 12
@@ -390,16 +386,22 @@ cleanup:
     return success;
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
-    EVP_PKEY *key = generate_mlkem_key();
+    EVP_PKEY *key;
     int result = EXIT_FAILURE;
 
+    if (argc != 4) {
+        fprintf(stderr, "usage: %s <input file> <envelope file> <output file>\n",
+                argv[0]);
+        return EXIT_FAILURE;
+    }
+    key = generate_mlkem_key();
     if (key == NULL)
         return EXIT_FAILURE;
-    if (!encrypt_file(key, INPUT_FILE, ENVELOPE_FILE))
+    if (!encrypt_file(key, argv[1], argv[2]))
         goto cleanup;
-    if (!decrypt_file(key, ENVELOPE_FILE, OUTPUT_FILE))
+    if (!decrypt_file(key, argv[2], argv[3]))
         goto cleanup;
     result = EXIT_SUCCESS;
 

@@ -6,7 +6,7 @@
 
 - ML-KEM-768으로 공유 비밀을 캡슐화하고 복원한다.
 - 공유 비밀을 AES-256-GCM 키로 사용해 파일을 암호화하고 인증한다.
-- `../foo.txt`를 입력으로 읽고 `pqc_mlkem_file.enc` 봉투와 `pqc_mlkem_file.dec` 복호화 결과를 만든다.
+- 입력 파일, 봉투 파일, 복호화 결과 파일 경로를 명령행 인자로 받는다.
 - 키 쌍은 실행 중 임시 생성되므로, 생성된 봉투는 같은 실행 중에만 복호화할 수 있다.
 
 ## 빌드 및 실행
@@ -21,8 +21,8 @@ gcc -o pqc_mlkem_file pqc_mlkem_file.c \
     -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
 
 export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-./pqc_mlkem_file
-diff ../foo.txt ./pqc_mlkem_file.dec
+./pqc_mlkem_file ../foo.txt foo.enc foo.dec
+diff ../foo.txt ./foo.dec
 ```
 
 `diff`에서 출력이 없으면 복호화 결과가 원본과 일치한다. `LD_LIBRARY_PATH`에는 링크 시 사용한 OpenSSL 설치 경로의 `lib64` 디렉터리를 지정한다.

@@ -36,7 +36,7 @@
 
 ## 빌드 및 실행
 
-아래 예시는 OpenSSL 3.5.8이 `/home/khchoi/work/pqc/openssl-3.5.8/install`에 설치된 환경을 기준으로 한다. `pqc_mlkem_file.c`는 `../foo.txt`를 입력으로 사용하므로 `ch4/pqc` 디렉터리에서 실행한다.
+아래 예시는 OpenSSL 3.5.8이 `/home/khchoi/work/pqc/openssl-3.5.8/install`에 설치된 환경을 기준으로 한다. `pqc_mlkem_file`은 `입력 파일 봉투 파일 복호화 결과 파일` 순서로 경로를 인자로 받는다.
 
 ```sh
 export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
@@ -46,11 +46,11 @@ gcc -o pqc_mlkem_file pqc_mlkem_file.c \
     -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
 
 export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-./pqc_mlkem_file
-diff ../foo.txt ./pqc_mlkem_file.dec
+./pqc_mlkem_file ../foo.txt foo.enc foo.dec
+diff ../foo.txt ./foo.dec
 ```
 
-정상 실행 시 `pqc_mlkem_file.enc`와 `pqc_mlkem_file.dec`가 생성된다. `diff` 출력이 없으면 복호화 결과가 입력 파일과 일치한다.
+정상 실행 시 지정한 봉투 파일과 복호화 결과 파일이 생성된다. `diff` 출력이 없으면 복호화 결과가 입력 파일과 일치한다.
 
 이 예제는 시연을 위해 키 쌍을 매 실행마다 메모리에서 생성하고 같은 실행 중 복호화한다. 개인키를 저장하거나 봉투와 함께 배포하지 않으므로, 생성된 봉투는 다음 실행에서 복호화할 수 없다.
 
