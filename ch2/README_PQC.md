@@ -10,6 +10,13 @@
 
 이 구조는 현대적 관점에서 보면 양자 컴퓨터에 취약한 키 생성 방식이며, 키 교환/서명/인증서를 양자내성 방식으로 전환할 필요가 있다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | `RAND_bytes()` → OpenSSL 3.x `RAND_priv_bytes_ex()` (libctx 사용) |
+| [rsagenkey.c](rsagenkey.c) | (전환본 없음) | RSA 키 생성은 아직 PQC로 전환되지 않음 |
+
 ## 2. 현재 취약 암호 사용
 
 - 난수 생성: `RAND_seed()` 기반의 엔트로피 주입 방식

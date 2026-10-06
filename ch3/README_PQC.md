@@ -10,6 +10,12 @@
 
 이 패턴은 “암호화 자체는 동작하지만, 키와 IV의 배포·관리 방식이 취약하다”는 점에서 PQC 전환 대상이 된다. AES는 Grover 공격 대비 상대적으로 강하나, 키 분배와 보호 구조는 양자 내성 관점에서 재설계가 필요하다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [aes_128_cbc.c](aes_128_cbc.c) | [pqc/pqc_aes_256_cbc.c](pqc/pqc_aes_256_cbc.c) | AES-128-CBC → AES-256-CBC, OpenSSL 3.x 컨텍스트 API(`EVP_CIPHER_CTX_new/free`, `EVP_Encrypt*`/`EVP_Decrypt*`) |
+
 ## 2. 현재 취약 암호 사용
 
 - 대칭키: AES-128-CBC
