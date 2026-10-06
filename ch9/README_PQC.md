@@ -10,6 +10,15 @@
 
 이 구조는 구형 SSL/TLS 구성 방식으로, RSA 기반 키 교환과 레거시 인증서 구조를 사용하므로 PQC 전환 대상이 가장 명확하다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [ssl_client.c](ssl_client.c) | [pqc/pqc_ssl_client.c](pqc/pqc_ssl_client.c) | TLS 1.3 + 하이브리드 ML-KEM 그룹, ML-DSA 서버 인증서 검증(CA, 호스트명) |
+| [ssl_server.c](ssl_server.c) | [pqc/pqc_ssl_server.c](pqc/pqc_ssl_server.c) | TLS 1.3 + 하이브리드 ML-KEM 그룹, ML-DSA-65 인증서/키 (인자로 지정) |
+
+인증서와 키는 [ch6/pqc](../ch6/pqc)에서 발급한다. 실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
 ## 2. 현재 취약 암호 사용
 
 - TLS 버전: 구형 SSLv23 API
@@ -77,9 +86,9 @@
 - `SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:secp256r1")`
   - `ctx`: TLS 컨텍스트
   - `"X25519MLKEM768:secp256r1"`: 혼합형 키 교환 그룹 목록
-- `SSL_CTX_use_certificate_file(ctx, "pqc_server_cert.pem", SSL_FILETYPE_PEM)`
+- `SSL_CTX_use_certificate_file(ctx, "BobCert.pem", SSL_FILETYPE_PEM)`
   - 인증서 파일 경로 변경
-- `SSL_CTX_use_PrivateKey_file(ctx, "pqc_server_key.pem", SSL_FILETYPE_PEM)`
+- `SSL_CTX_use_PrivateKey_file(ctx, "BobPriv.pem", SSL_FILETYPE_PEM)`
   - 양자내성 키 또는 하이브리드 키 사용
 
 목표 매개변수-역할 정리:
@@ -89,7 +98,7 @@
 - `ciphersuites`: 허용 가능한 암호 스위트
 - `groups`: 키 교환 그룹 선택
 - `"X25519MLKEM768:secp256r1"`: 하이브리드 키 교환 조합 예시
-- `pqc_server_cert.pem` / `pqc_server_key.pem`: PQC 인증서와 키 파일
+- `BobCert.pem (ch6/pqc)` / `BobPriv.pem (ch6/pqc)`: PQC 인증서와 키 파일
 
 권장 방식:
 - 서버와 클라이언트가 동일한 보안 정책 집합을 사용해야 한다.
