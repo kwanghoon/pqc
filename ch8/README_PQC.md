@@ -10,6 +10,15 @@
 
 이 구조는 DES 기반 키 공유와 책임 분리 방식이 이미 오래된 보안 모델이므로, 양자내성 전환을 통해 정책과 프로토콜을 재설계해야 한다.
 
+## 원본과 전환본
+
+| 원본 | 전환본 | 변경 내용 |
+|---|---|---|
+| [client0.c](client0.c) | [pqc/pqc_client0.c](pqc/pqc_client0.c) | DES-CBC → AES-256-GCM, 32바이트 키, 랜덤 nonce, 태그 전송 |
+| [server0.c](server0.c) | [pqc/pqc_server0.c](pqc/pqc_server0.c) | GCM 태그 검증 후 타임스탬프 확인, 부분 수신 처리 |
+
+실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
 ## 2. 현재 취약 암호 사용
 
 - 대칭 암호: DES
