@@ -80,7 +80,7 @@ void AES_encryption(const char plainfn[], const char cipherfn[], const unsigned 
     EVP_CIPHER_CTX_free(ctx);
 }
 
-static void AES_decryption(const char cipherfn[], const char plainfn[], const unsigned char key[], const unsigned char iv[])
+void AES_decryption(const char cipherfn[], const char plainfn[], const unsigned char key[], const unsigned char iv[])
 {
     FILE *ctf, *ptf;
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
