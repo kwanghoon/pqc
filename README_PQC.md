@@ -23,6 +23,7 @@ make install
 ## 설치 확인
 
 ```bash
+export LD_LIBRARY_PATH=$OPENSSL358/lib64
 $OPENSSL358/bin/openssl version
 
 OpenSSL 3.5.8 25 Aug 2026 (Library: OpenSSL 3.5.8 25 Aug 2026)
