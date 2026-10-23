@@ -1,67 +1,44 @@
-# PQC 비교 문서: mkrand16.c vs pqc_mkrand16.c
+# 비교 문서: mkrand16.c와 pqc_mkrand16.c
 
 ## 목적
 
-이 문서는 원본 [../mkrand16.c](../mkrand16.c) 와 양자내성 전환 버전 [pqc_mkrand16.c](pqc_mkrand16.c) 의 차이를 비교하기 위한 문서이다.
+이 문서는 원본 [../mkrand16.c](../mkrand16.c)와 [pqc_mkrand16.c](pqc_mkrand16.c)의 동작과 코드를 비교한다.
 
 목표는 다음과 같다.
 
-- 원본 코드의 동작과 구조를 최대한 유지한다.
-- 이 예제에서는 공개키 알고리즘이 없으므로, OpenSSL 3 API 변경을 PQC 전환과 같은 범주의 필수 전환으로 취급한다.
-- API 변경에 필요한 부분 이외의 차이를 만들지 않는다.
-- 원본 코드와 전환본의 차이를 코드 레벨에서 명확히 확인할 수 있게 한다.
+- 두 소스의 동작과 구조를 동일하게 유지한다.
+- 난수 생성 예제에는 공개키 PQC 알고리즘이 없으므로, 이 파일은 OpenSSL 3 API 전환 예제로도 변경하지 않는다.
+- 양자내성 키 생성은 별도 프로그램인 `pqc_mldsa_genkey.c`에서 다룬다.
 
 ## 핵심 비교 개요
 
-원본 코드는 다음 흐름을 따른다.
+두 소스 모두 다음과 같이 동작한다.
 
 - 현재 시간 기반으로 시드를 만든다.
 - `RAND_seed()`로 시드를 주입한다.
 - `RAND_bytes()`로 16바이트 난수를 생성한다.
 - 출력은 16바이트 hex 문자열이다.
 
-전환본은 같은 흐름을 유지하며 난수 생성 호출만 OpenSSL 3.x API인 `RAND_bytes_ex()`로 바꾼다. `NULL` libctx를 사용해 `RAND_seed()`와 같은 기본 컨텍스트를 사용한다.
+`RAND_bytes()`는 OpenSSL 3.5.8에서도 사용할 수 있는 API이며, 현재 두 소스는 이 호출을 동일하게 사용한다. 따라서 이 난수 예제에는 PQC 알고리즘 전환이나 OpenSSL 3 전용 API 변경이 포함되어 있지 않다.
 
-## 비교용 diff
+## 비교 결과
 
-```diff
---- a/ch2/mkrand16.c
-+++ b/ch2/pqc/pqc_mkrand16.c
-@@
-     RAND_seed (seedbuf, 8);
--    RAND_bytes (randbuf, 16);
-+    if (RAND_bytes_ex(NULL, randbuf, 16, 0) != 1)
-+        return 1;
-     printStr(randbuf, 16);
-```
-
-## 변경 범위
-
-- `RAND_bytes()`를 OpenSSL 3.x의 `RAND_bytes_ex()`로 변경한다.
-- 호출 결과가 성공(1)이 아닌 경우 실패 코드로 종료한다.
-- 출력 함수, 시드 생성, 버퍼 크기, 함수 시그니처, 서식 등 나머지 코드는 원본과 동일하게 유지한다.
-- `RAND_priv_bytes_ex()`와 별도 `OSSL_LIB_CTX`는 이 비교에 필요하지 않으므로 사용하지 않는다. 별도 컨텍스트를 생성하면 기본 컨텍스트에 적용한 `RAND_seed()`와 난수 생성이 서로 다른 컨텍스트를 사용할 수 있다.
+코드 내용과 동작의 차이는 없다. 원본 파일에는 마지막 개행이 없고 전환본에는 마지막 개행이 있다는 파일 끝 형식 차이만 있다. 반환값을 검사해 난수 생성 실패 시 `main`이 `1`을 반환하는 처리도 두 파일에 동일하게 들어 있다.
 
 ## 결론
 
-이 비교 문서는 PQC 전환을 위해 필요한 최소 변경만 반영한 버전이다.
-
-- 원본 성격 유지
-- OpenSSL 3.5.8 요구사항 반영
-- 코드 비교가 쉬운 구조 유지
-- 불필요한 부가 기능 제거
+`pqc_mkrand16.c`는 현재 원본 `mkrand16.c`와 같은 동작을 유지한다. 이 예제에서는 PQC 알고리즘 전환을 주장하지 않으며, ML-DSA 키 생성 같은 실제 PQC 전환은 `pqc_mldsa_genkey.c`에서 수행한다.
 
 ## 빌드 및 실행 방법
 
-OpenSSL 3.5.8 설치는 [../../README_PQC.md](../../README_PQC.md)를 참고한다. 설치 후 `OPENSSL358` 환경 변수가 설정되어 있어야 한다.
+OpenSSL 3.5.8 설치는 [../../README_PQC.md](../../README_PQC.md)를 참고한다. Makefile의 기본 설치 경로는 `$HOME/pqc/openssl-3.5.8/install`이며, 다른 경로를 사용하려면 `OPENSSL358` 변수를 지정한다.
 
 ```bash
-export OPENSSL358=your-openss-3.5.8-install-dir
 cd ch2/pqc
-make
+make OPENSSL358=/path/to/openssl-3.5.8/install
 ```
 
-`make`는 두 프로그램을 빌드한 뒤 차례로 실행합니다. `pqc_mkrand16`은 16바이트 난수를 hex 문자열(32자)로 출력하고, `pqc_mldsa_genkey`는 기본적으로 `pubKey.pem`과 `privKey.pem`을 생성합니다. Makefile은 OpenSSL 라이브러리 경로로 `lib64` 또는 `lib`를 자동으로 선택합니다.
+`make`는 `pqc_mkrand16`과 `pqc_mldsa_genkey`를 빌드한 뒤 차례로 실행한다. `pqc_mkrand16`은 16바이트 난수를 hex 문자열(32자)로 출력하고, `pqc_mldsa_genkey`는 기본적으로 `pubKey.pem`과 `privKey.pem`을 생성한다. Makefile은 OpenSSL 라이브러리 경로로 `lib64` 또는 `lib`를 자동으로 선택한다.
 
 ## pqc_mldsa_genkey.c (rsagenkey.c 전환본)
 
