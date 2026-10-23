@@ -14,8 +14,8 @@
 
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
-| [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | 예외 사례: 공개키 PQC 알고리즘이 없으므로 `RAND_bytes()` → OpenSSL 3.x `RAND_bytes_ex()` API 변경을 전환으로 간주 |
-| [rsagenkey.c](rsagenkey.c) | [pqc/pqc_mldsa_genkey.c](pqc/pqc_mldsa_genkey.c) | RSA-512 키 쌍 → ML-DSA-65 키 쌍 (`EVP_PKEY_keygen`), SPKI/PKCS#8 PEM, 개인키 권한 0600, 출력 파일명을 인자로 지정 |
+| [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | PQC 공개키 알고리즘 전환 대상이 아니며, 현재는 `RAND_bytes()` 호출과 동작을 동일하게 유지 |
+| [rsagenkey.c](rsagenkey.c) | [pqc/pqc_mldsa_genkey.c](pqc/pqc_mldsa_genkey.c) | RSA-512 키 생성에서 ML-DSA-65 키 생성으로 전환 (`EVP_PKEY_CTX_new_from_name()` 및 `EVP_PKEY_keygen()`); SPKI 공개키와 PKCS#8 개인키를 고정 파일명으로 저장 |
 
 ## 2. 현재 취약 암호 사용
 
@@ -27,13 +27,13 @@
 
 - RSA는 쇼어 알고리즘에 취약하다.
 - 512비트 RSA는 현대 보안 기준에 비해 매우 약하다.
-- 키 생성 시 확보한 엔트로피와 키 유형이 양자 내성 기준을 만족하지 않는다.
+- RSA 키 유형은 양자 내성 기준을 만족하지 않는다. 시간값을 `RAND_seed()`에 전달하는 기존 코드는 유지되며, 이는 강한 엔트로피 확보를 보장하지 않는다.
 
 ## 3. 전환 목표
 
-- 난수 생성: OpenSSL 3.x RAND API로 갱신한다. 난수 생성 API 자체는 공개키 PQC 알고리즘이 아니며, 이 예제에서는 API 갱신을 전환으로 간주한다.
-- 키 생성: RSA에서 ML-KEM 또는 ML-DSA 계열로 이동
-- 키 저장: PEM 기반 구조를 유지하되 양자내성 키 형식 및 쿠버네티스/애플리케이션 스토리지 정책에 맞게 변경
+- 난수 생성: 이 예제에서는 `RAND_bytes()`를 그대로 사용한다. 난수 생성 API는 공개키 PQC 알고리즘이 아니므로 `pqc_mkrand16.c`는 알고리즘 전환본이 아니다.
+- 키 생성: 이 예제에서는 서명용 RSA 키를 ML-DSA-65 키로 전환한다. 키 캡슐화가 목적이라면 별도 예제에서 ML-KEM을 사용한다.
+- 키 저장: PEM을 사용한다. ML-DSA 공개키는 SPKI 형식, 개인키는 PKCS#8 형식으로 저장한다.
 
 ## 4. 5단계 전환 계획
 
@@ -73,33 +73,11 @@
 - `rsaPub`: 공개키 객체
 - `pubf`, `privf`: 키를 파일로 기록하는 목적의 파일 핸들
 
-목표 API 패턴(권장):
-- `EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_KEM, NULL);`
-  - `EVP_PKEY_ML_KEM`: 양자내성 키교환 알고리즘 식별자
-  - `NULL`: 기본 엔진 사용
-- `EVP_PKEY_keygen_init(ctx)`
-  - `ctx`: 키 생성 컨텍스트
-- `EVP_PKEY_generate(ctx, &pkey)`
-  - `pkey`: 생성된 키 객체 저장 위치
-- `EVP_PKEY_CTX_set_group_name(ctx, "ML-KEM-768")`
-  - `ctx`: 키 생성 컨텍스트
-  - `"ML-KEM-768"`: 키 교환 파라미터 그룹 이름
-- `EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL)` 또는 `EVP_PKEY_CTX_new_id(EVP_PKEY_SLH_DSA, NULL)`
-  - `EVP_PKEY_ML_DSA` / `EVP_PKEY_SLH_DSA`: 양자내성 서명 알고리즘 식별자
-- `EVP_PKEY_sign_init(ctx)` / `EVP_PKEY_verify_init(ctx)`
-  - `ctx`: 서명/검증용 컨텍스트
-- `EVP_PKEY_CTX_set_security_bits(ctx, 256)`
-  - `ctx`: 알고리즘 컨텍스트
-  - `256`: 보안 강도(비트 기준)
-
-목표 매개변수-역할 정리:
-- `EVP_PKEY_ML_KEM`: 키 전송 알고리즘 선택
-- `EVP_PKEY_ML_DSA` / `EVP_PKEY_SLH_DSA`: 서명 알고리즘 선택
-- `ctx`: 알고리즘별 실행 컨텍스트
-- `pkey`: 생성된 공개키/개인키 객체
-- `"ML-KEM-768"`: 보안 파라미터 그룹 선택
-- `256`: 목표 보안 강도 값
-- `NULL`: 엔진/가변 인자 사용하지 않음
+현재 ML-DSA 전환본의 API 패턴:
+- `EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL)`으로 기본 libctx에서 ML-DSA-65 키 생성 컨텍스트를 만든다.
+- `EVP_PKEY_keygen_init(ctx)`와 `EVP_PKEY_keygen(ctx, &pkey)`로 키 쌍을 생성한다.
+- `pkey` 하나에 공개키와 개인키가 함께 표현되므로, RSA의 `RSAPublicKey_dup()`에 해당하는 별도 복제는 필요하지 않다.
+- `PEM_write_PUBKEY()`는 공개키를 SubjectPublicKeyInfo(SPKI)로, `PEM_write_PrivateKey()`는 개인키를 PKCS#8로 기록한다.
 
 권장 전환:
 - 적용 대상 애플리케이션이 키 교환을 수행하는 경우: `ML-KEM`
@@ -109,28 +87,27 @@
 ### (2) 키 준비
 
 현재:
-- `RSA_generate_key()`로 개인키와 공개키를 생성
+- `RSA_generate_key()`로 RSA 키를 생성하고 `RSAPublicKey_dup()`으로 공개키 객체를 복제
 - `PEM_write_RSAPublicKey()`, `PEM_write_RSAPrivateKey()`로 파일 저장
 
 전환 후:
-- 양자내성 공개키와 개인키 생성
-- PEM 또는 통합 형식으로 저장
-- 키 식별정보와 알고리즘 ID를 함께 보관
+- `EVP_PKEY_keygen()`으로 ML-DSA-65 키 쌍 생성
+- `PEM_write_PUBKEY()` 및 `PEM_write_PrivateKey()`로 SPKI 공개키와 PKCS#8 개인키를 저장
 
 주의점:
-- 기존 키 파일 이름을 유지하더라도 키 형식과 알고리즘을 명시적으로 변경해야 한다.
-- 키 로테이션과 이전 키 호환성 전략을 준비해야 한다.
+- 파일명은 원본과 동일하게 `pubKey.pem`, `privKey.pem`으로 고정되어 있으며, 실행한 현재 디렉터리에 생성한다.
+- 전환본은 파일을 `fopen(..., "w")`로 열며 별도 개인키 권한 설정이나 암호화를 수행하지 않는다.
+- RSA PEM과 ML-DSA PEM은 알고리즘 및 인코딩 형식이 다르므로 상호 호환되지 않는다.
 
 ### (3) 연산 초기화
 
 현재:
-- `RAND_seed()`로 시드 주입 후 `RAND_bytes()` 호출
-- `RSA *` 객체 생성과 공개키/개인키 구분
+- `rsagenkey.c`는 시간값으로 `RAND_seed()`를 호출한 뒤 RSA 키 생성 API를 사용한다.
+- `RSA *` 개인키와 복제한 공개키 객체를 별도로 관리한다.
 
 전환 후:
-- KEM/서명 전용 `EVP_PKEY_CTX` 초기화
-- 개인키/공개키 컨텍스트 분리
-- 알고리즘별 초기 파라미터 설정
+- ML-DSA-65용 `EVP_PKEY_CTX`를 초기화하고 `EVP_PKEY` 키 객체를 관리한다.
+- 전환본은 기존 시간 기반 `RAND_seed()` 흐름을 유지하며 키 생성 컨텍스트에는 기본 libctx(`NULL`)를 사용한다.
 
 설계 포인트:
 - 난수 생성과 키 생성은 별도 API 및 정책으로 구분한다.
@@ -170,10 +147,10 @@
 
 ## 5. 적용 우선순위
 
-1. 키 생성 API를 RSA에서 PQC 키 생성 API로 교체
-2. 파일 저장 포맷을 양자내성 키 형식에 맞게 확인
-3. 애플리케이션이 공개키를 받아들이는 경로를 점검
-4. 키 로테이션 및 운영 절차를 함께 정리
+1. 키 생성 API를 RSA에서 ML-DSA-65 키 생성 API로 교체
+2. SPKI 공개키와 PKCS#8 개인키 형식을 사용하는지 확인
+3. 애플리케이션이 ML-DSA 공개키·개인키를 받아들이는지 점검
+4. 키 파일 권한, 키 로테이션 및 운영 절차를 별도로 정리
 
 ## 6. 요약
 

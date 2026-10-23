@@ -29,19 +29,21 @@ int main(void)
     RSA *rsaPriv = NULL, *rsaPub = NULL;
     char seedbuf [MAXBUFF];
     FILE *pubf, *privf;
+    int ret = 0;
+
     getTimeSubstr(seedbuf);
     RAND_seed (seedbuf, 8);
 
     rsaPriv = RSA_generate_key(512, RSA_F4, NULL, NULL);
     if(rsaPriv == NULL) {
      fprintf(stderr, "RSA generate key error.\n");
-        return(1);
+        return 1;
     }
 
     rsaPub = RSAPublicKey_dup(rsaPriv);
     if(rsaPub == NULL) {
         fprintf(stderr, "RSA public key copy error.\n");
-        return(2);
+        return 2;
     }
 
     pubf = fopen("pubKey.pem", "w"); assert(pubf);
@@ -59,5 +61,5 @@ int main(void)
     RSA_free(rsaPriv);
     RSA_free (rsaPub);
 
-    exit(0);
+    return ret;
 }

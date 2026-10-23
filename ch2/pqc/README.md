@@ -38,21 +38,23 @@ cd ch2/pqc
 make OPENSSL358=/path/to/openssl-3.5.8/install
 ```
 
-`make`는 `pqc_mkrand16`과 `pqc_mldsa_genkey`를 빌드한 뒤 차례로 실행한다. `pqc_mkrand16`은 16바이트 난수를 hex 문자열(32자)로 출력하고, `pqc_mldsa_genkey`는 기본적으로 `pubKey.pem`과 `privKey.pem`을 생성한다. Makefile은 OpenSSL 라이브러리 경로로 `lib64` 또는 `lib`를 자동으로 선택한다.
+`make`는 `pqc_mkrand16`과 `pqc_mldsa_genkey`를 빌드한 뒤 차례로 실행한다. `pqc_mkrand16`은 16바이트 난수를 hex 문자열(32자)로 출력하고, `pqc_mldsa_genkey`는 실행한 현재 디렉터리에 `pubKey.pem`과 `privKey.pem`을 생성한다. 두 파일은 이미 존재하면 덮어쓴다. Makefile은 OpenSSL 라이브러리 경로로 `lib64` 또는 `lib`를 자동으로 선택한다.
 
 ## pqc_mldsa_genkey.c (rsagenkey.c 전환본)
 
-[../rsagenkey.c](../rsagenkey.c)의 RSA-512 키 생성을 ML-DSA-65(FIPS 204) 키 생성으로 바꾼 [pqc_mldsa_genkey.c](pqc_mldsa_genkey.c)이다. 서명용 키이므로 ML-DSA를 선택했다(암호화/키 합의용 ML-KEM 키 생성은 [ch4](../../ch4/pqc/pqc_mlkem_envelope.c) 참고).
+[pqc_mldsa_genkey.c](pqc_mldsa_genkey.c)는 [../rsagenkey.c](../rsagenkey.c)의 RSA 키 생성을 ML-DSA-65(FIPS 204) 키 생성으로 전환한 예제이다. 서명용 키이므로 ML-DSA를 사용한다(키 캡슐화용 ML-KEM은 [ch4](../../ch4/pqc/pqc_mlkem_envelope.c) 참고).
 
-- `RSA_generate_key`, `RSAPublicKey_dup`, `RAND_seed` 제거 → `EVP_PKEY_CTX_new_from_name("ML-DSA-65")` + `EVP_PKEY_keygen`
-- 공개키는 `PEM_write_PUBKEY`(`BEGIN PUBLIC KEY`), 개인키는 `PEM_write_PrivateKey`(PKCS#8)로 저장하고 개인키 파일 권한은 0600
-- `assert` 대신 오류 메시지와 종료 코드 사용
-- 생성한 키는 ch7 `pqc_hash_sign`, ch5 `pqc_mldsa_sign_test`에서 그대로 사용할 수 있다.
+전환에 필요한 변경:
+
+- `RSA_generate_key()` 대신 `EVP_PKEY_CTX_new_from_name()`과 `EVP_PKEY_keygen()`으로 ML-DSA-65 키를 생성한다.
+- RSA 공개키 복제는 필요하지 않다. `EVP_PKEY`에서 `PEM_write_PUBKEY()`와 `PEM_write_PrivateKey()`로 공개키와 개인키를 기록한다.
+- 원본의 `getTimeSubstr()`와 `RAND_seed()` 흐름은 유지한다. 키 생성은 `NULL` 기본 libctx를 사용한다.
+- 원본처럼 `pubKey.pem`과 `privKey.pem`을 고정 파일명으로 사용한다.
+
+`RSAPublicKey_dup()`에 해당하는 별도의 공개키 복제는 필요하지 않다. `EVP_PKEY`에서 공개키와 개인키를 각각 PEM으로 기록한다. 공개키는 SPKI(`BEGIN PUBLIC KEY`), 개인키는 PKCS#8(`BEGIN PRIVATE KEY`) 형식이다. 파일명은 명령행 인자로 변경할 수 없고, 개인키 권한은 별도로 설정하지 않는다. 생성한 키는 ch7 `pqc_hash_sign`, ch5 `pqc_mldsa_sign_test`에서 사용할 수 있다.
 
 ```bash
 export OPENSSL358=<프로젝트 경로>/openssl-3.5.8/install
 cd ch2/pqc
 make
 ```
-
-다른 키 파일명을 사용하려면 `make`로 빌드한 뒤 `./pqc_mldsa_genkey pub.pem priv.pem`처럼 실행합니다.
