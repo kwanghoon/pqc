@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     AES_encryption (argv[1],argv[2],mykey,iv);
     AES_decryption(argv[2],argv[3],mykey,iv);
 
-    return(0);
+    return 0;
 }
 
 void AES_encryption(char plainfn[], char cipherfn[], unsigned char key[], unsigned char iv[])

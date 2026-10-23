@@ -1,4 +1,4 @@
-# PQC 전환 계획: ch3 - AES-128-CBC 파일 암호화/복호화
+# 전환 검토: ch3 - AES-128-CBC 파일 암호화/복호화
 
 ## 1. 전환 목적
 
@@ -8,38 +8,45 @@
 - `EVP_aes_128_cbc()`로 파일을 암호화한다.
 - 동일한 키와 IV를 사용해 복호화한다.
 
-이 패턴은 “암호화 자체는 동작하지만, 키와 IV의 배포·관리 방식이 취약하다”는 점에서 PQC 전환 대상이 된다. AES는 Grover 공격 대비 상대적으로 강하나, 키 분배와 보호 구조는 양자 내성 관점에서 재설계가 필요하다.
+이 예제의 전환 범위는 AES 키 길이 강화(AES-128에서 AES-256-CBC로 변경)와 OpenSSL 3 호환이다. AES-256은 대칭키 보안 강도를 높이지만 PQC 알고리즘은 아니며, 이 전환본은 키 배포·합의 구조를 포함하지 않는다. 양자내성 KEM 기반 키 배포는 별도 전환 과제로 다룬다.
+
+현재 구현은 매 실행 시 `RAND_bytes()`로 키와 IV를 메모리에서 생성하고, 같은 실행 중 입력 파일을 암호화한 뒤 복호화한다. 키와 IV는 암호문 파일에 저장하지 않으므로 암호문만 보관했다가 후속 실행에서 복호화하는 용도는 지원하지 않는다. 예제 소스는 `RAND_bytes()`, `EVP_CipherInit_ex()`, `fwrite()`의 반환값을 검사하지 않는다. 반면 cipher context 할당과 `EVP_CipherUpdate()`/`EVP_CipherFinal_ex()` 결과는 `assert`로 검사한다.
 
 ## 원본과 전환본
 
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
-| [aes_128_cbc.c](aes_128_cbc.c) | [pqc/pqc_aes_256_cbc.c](pqc/pqc_aes_256_cbc.c) | AES-128-CBC → AES-256-CBC, OpenSSL 3.x 컨텍스트 API(`EVP_CIPHER_CTX_new/free`, `EVP_Encrypt*`/`EVP_Decrypt*`) |
+| [aes_128_cbc.c](aes_128_cbc.c) | [pqc/pqc_aes_256_cbc.c](pqc/pqc_aes_256_cbc.c) | AES-128 → AES-256 키 길이 강화; OpenSSL 3 opaque cipher context를 `EVP_CIPHER_CTX_new/free`로 관리 |
 
 ## 2. 현재 취약 암호 사용
 
 - 대칭키: AES-128-CBC
 - 키 생성: `RAND_bytes()` 기반 임의 키
 - IV: `RAND_bytes()`로 직접 생성
-- 키/IV 취급: 동일 파일/프로그램 내부에서 생성 후 사용
+- 키/IV 취급: 실행 중 메모리에서 생성하여 같은 프로세스의 암호화와 복호화에 사용
+- 랜덤 생성 반환값은 확인하지 않으며, 생성한 키와 IV는 암호문이나 별도 파일에 기록하지 않는다.
 
 문제점:
 - 키 교환 경로가 정의되어 있지 않다.
-- 키와 IV가 파일/메모리에 함께 존재할 수 있어 노출 위험이 있다.
+- 키와 IV를 수신자에게 전달하거나 나중에 복호화할 수 있도록 보관하는 구조가 없다.
 - 전자봉투(암호문+키 배포) 구조가 없다.
 
-## 3. 전환 목표
+## 3. 장기 개선·전환 목표
 
 - 키 배포 구조를 양자내성 KEM으로 전환
 - 대칭 암호는 AES-256-GCM 또는 AES-256-CTR로 강화
 - IV 사용 방식을 정규화하고 nonce 재사용 방지
 - 파일 암호화는 수신자와의 안전한 키 합의 구조를 갖추도록 변경
 
-## 4. 5단계 전환 계획
+위 항목은 장기적인 키 배포·관리 전환 목표다. 현재 `pqc/pqc_aes_256_cbc.c`가 구현하는 범위는 AES-128에서 AES-256-CBC로의 키 길이 강화와 OpenSSL 3 cipher context 호환이며, KEM·GCM 전환은 포함하지 않는다.
+
+## 4. 전환 설계 참고
+
+다음 항목은 현재 구현 설명이 아니라 향후 키 배포·보호 구조를 설계할 때 검토할 제안이다.
 
 ### (1) 알고리즘/매개변수 설정
 
-현재 API 패턴(소스 코드 기준):
+원본 AES-128 소스의 API 패턴:
 - `RAND_bytes(mykey, 16)`
   - `mykey`: 대칭키 저장 버퍼
   - `16`: 키 길이(128비트)
@@ -90,21 +97,19 @@
   - `NULL`: 엔진 없음
 - `EVP_PKEY_encapsulate_init(kctx)`
   - `kctx`: 키 캡슐화 컨텍스트
-- `EVP_PKEY encapsulate(kctx, out, &outlen, pubkey)`
-  - `out`: 캡슐화된 세션 키 버퍼
-  - `&outlen`: 세션 키 길이
-  - `pubkey`: 수신자 공개키
-- `EVP_CIPHER_CTX_init(&dem_ctx)`
-  - `&dem_ctx`: DEM(대칭암호) 컨텍스트
-- `EVP_EncryptInit_ex(&dem_ctx, EVP_aes_256_gcm(), NULL, session_key, iv)`
+- `EVP_PKEY_encapsulate(kctx, ciphertext, &ciphertext_len, session_key, &session_key_len)`
+  - KEM 공개키로 캡슐화 데이터와 공유 세션 키를 생성한다.
+- `EVP_CIPHER_CTX *dem_ctx = EVP_CIPHER_CTX_new()`
+  - OpenSSL 3에서 사용할 DEM(대칭암호) 컨텍스트를 생성한다.
+- `EVP_EncryptInit_ex(dem_ctx, EVP_aes_256_gcm(), NULL, session_key, iv)`
   - `EVP_aes_256_gcm()`: AES-256-GCM 선택
   - `session_key`: KEM으로 전달된 세션 키
   - `iv`: nonce/IV
-- `EVP_EncryptUpdate(&dem_ctx, outbuf, &outlen, inbuf, inlen)`
+- `EVP_EncryptUpdate(dem_ctx, outbuf, &outlen, inbuf, inlen)`
   - `outbuf`: 암호문 출력 버퍼
   - `inbuf`: 평문 입력 버퍼
-- `EVP_EncryptFinal_ex(&dem_ctx, outbuf + outlen, &final_len)`
-  - 최종 블록 처리 및 인증 태그 생성
+- `EVP_EncryptFinal_ex(dem_ctx, outbuf + outlen, &final_len)` 뒤 `EVP_CIPHER_CTX_ctrl(dem_ctx, EVP_CTRL_GCM_GET_TAG, ...)`
+  - 암호화를 마친 뒤 GCM 인증 태그를 별도로 가져온다.
 
 목표 매개변수-역할 정리:
 - `EVP_PKEY_ML_KEM`: 양자내성 키 교환 알고리즘 식별자
@@ -121,7 +126,7 @@
 - 키 교환과 암호화가 분리된 KEM + DEM 구조
 - 대칭키는 KEM으로 전달되고, 실제 데이터는 DEM에서 암호화
 
-### (2) 키 준비
+### (2) 키 준비 제안
 
 현재:
 - `mykey`와 `iv`를 동일 프로그램에서 생성
@@ -137,7 +142,7 @@
 - 키 식별자와 생성 시각을 기록
 - 키 로테이션 정책 수립
 
-### (3) 연산 초기화
+### (3) 연산 초기화 제안
 
 현재:
 - `EVP_CIPHER_CTX_init()`
@@ -153,7 +158,7 @@
 - CBC는 패딩 문제와 IV 재사용 위험이 있어 현대 구현에서는 GCM이 더 안전한 선택이다.
 - 암호화와 복호화 컨텍스트를 일관되게 유지해야 한다.
 
-### (4) 연산 실행
+### (4) 연산 실행 제안
 
 현재:
 - 파일을 `MAXBUFF` 단위로 읽어 암호화
@@ -162,14 +167,14 @@
 
 전환 후:
 - KEM으로 공유한 세션 키를 기반으로 파일 암호화
-- `EVP_EncryptUpdate()`/`EVP_DecryptUpdate()`를 사용해 연속 처리
+- `EVP_EncryptUpdate()`/`EVP_DecryptUpdate()`를 사용해 연속 처리하고, 최종 단계에서 GCM 인증 태그를 검증
 - 인증 태그 검증을 마지막 단계에서 수행
 
 주의:
 - 무결성을 보장하지 않는 CBC 방식은 재전송/변조 탐지에 약하다.
 - PQC 전환에서는 대칭 암호화 단계에서 인증을 추가하는 것이 표준이다.
 
-### (5) 결과 처리
+### (5) 결과 처리 제안
 
 현재:
 - `foo.enc`와 `foo.dec` 파일을 출력
@@ -190,6 +195,16 @@
 3. IV/nonce를 매번 독립적으로 생성하도록 변경
 4. 키 로테이션과 파일 복호화 실패 처리를 개선
 
-## 6. 요약
+## 6. 현재 코드 빌드 및 실행
 
-이 장은 단순 암호화 예제이지만, 실제 전환 관점에서는 가장 큰 문제는 “키를 어떻게 안전하게 나누고 관리할 것인가”이다. 따라서 ch3는 AES 자체보다도 키 합의와 보호 구조를 바꾸는 전환이 핵심이며, PQC 환경에서는 KEM + DEM 방식으로 전환하는 것이 가장 자연스러운 설계이다.
+두 OpenSSL 버전의 실행과 복호화 결과 검증은 다음 스크립트로 수행한다.
+
+```sh
+./build.sh
+```
+
+설치 경로가 기본값과 다르면 `OPENSSL102` 및 `OPENSSL358` 환경 변수로 지정한다. 스크립트는 `foo.txt`를 각각 AES-128-CBC 및 AES-256-CBC로 처리하고 복호화한 파일을 원본과 비교한다.
+
+## 7. 요약
+
+현재 전환본은 AES-256-CBC와 OpenSSL 3 cipher context 관리를 적용한 예제이며, PQC 키 합의·키 배포를 구현하지 않는다. 실제 양자내성 전환에서는 KEM 기반 키 전달, 인증된 대칭 암호화, 키 및 파일 형식 관리를 함께 설계해야 한다.
