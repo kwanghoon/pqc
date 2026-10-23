@@ -14,12 +14,12 @@
 
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
-| [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | `RAND_bytes()` → OpenSSL 3.x `RAND_priv_bytes_ex()` (libctx 사용) |
+| [mkrand16.c](mkrand16.c) | [pqc/pqc_mkrand16.c](pqc/pqc_mkrand16.c) | 예외 사례: 공개키 PQC 알고리즘이 없으므로 `RAND_bytes()` → OpenSSL 3.x `RAND_bytes_ex()` API 변경을 전환으로 간주 |
 | [rsagenkey.c](rsagenkey.c) | [pqc/pqc_mldsa_genkey.c](pqc/pqc_mldsa_genkey.c) | RSA-512 키 쌍 → ML-DSA-65 키 쌍 (`EVP_PKEY_keygen`), SPKI/PKCS#8 PEM, 개인키 권한 0600, 출력 파일명을 인자로 지정 |
 
 ## 2. 현재 취약 암호 사용
 
-- 난수 생성: `RAND_seed()` 기반의 엔트로피 주입 방식
+- 난수 생성: `RAND_seed()`로 시간 기반 값을 추가 입력하고 OpenSSL RAND API로 난수를 생성
 - 키 생성: RSA 512비트
 - 공개키/개인키 저장: PEM 형식의 RSA 키
 
@@ -31,7 +31,7 @@
 
 ## 3. 전환 목표
 
-- 난수 생성: 양자내성 키 생성과 KEM/서명 구현에 적합한 안전한 랜덤 소스 확보
+- 난수 생성: OpenSSL 3.x RAND API로 갱신한다. 난수 생성 API 자체는 공개키 PQC 알고리즘이 아니며, 이 예제에서는 API 갱신을 전환으로 간주한다.
 - 키 생성: RSA에서 ML-KEM 또는 ML-DSA 계열로 이동
 - 키 저장: PEM 기반 구조를 유지하되 양자내성 키 형식 및 쿠버네티스/애플리케이션 스토리지 정책에 맞게 변경
 

@@ -1,69 +1,45 @@
 /*
- * pqc_mkrand16.c
- *
- * Original behavior:
- *   - create a short time-based seed
- *   - feed it to OpenSSL RNG
- *   - generate 16 random bytes and print them as hex
- *
- * OpenSSL 3.5.8-compatible modernization:
- *   - keep the same external behavior as ch2/mkrand16.c
- *   - use the modern OpenSSL 3.x libctx + RAND_priv_bytes_ex API
- *   - avoid unrelated additions; no extra formatting or diagnostics
- */
+ - ch1
+ - mkrand16.c
+ - 16바이트 난수를 생성하는 프로그램
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <openssl/rand.h>
 
 #define MAXBUFF 128
 
-static void printHex(const unsigned char *buf, size_t size)
+void printStr(const unsigned char *buf, int size)
 {
-    size_t i;
-    for (i = 0; i < size; i++) {
-        printf("%02x", buf[i]);
-    }
+    int i;
+
+    for(i = 0; i < size; i++)
+    printf("%02x", buf[i]);
     printf("\n");
 }
 
-static void getTimeSubstr(unsigned char *buf, size_t len)
+void getTimeSubstr(char buff[])
 {
     struct timeval atime;
-    gettimeofday(&atime, NULL);
-
-    if (len < 8) {
-        return;
-    }
-
-    memcpy(buf, &(atime.tv_sec), 4);
-    memcpy(buf + 4, &(atime.tv_usec), 4);
+    struct timezone tzone;
+    gettimeofday(&atime, &tzone);
+    memcpy(buff, &(atime.tv_sec), 4);
+    memcpy(buff+4, &(atime.tv_usec), 4);
 }
 
 int main(void)
 {
-    unsigned char seedbuf[MAXBUFF];
-    unsigned char randbuf[16];
-    OSSL_LIB_CTX *libctx = NULL;
-    int rc;
-
-    getTimeSubstr(seedbuf, sizeof(seedbuf));
-    RAND_seed(seedbuf, 8);
-
-    libctx = OSSL_LIB_CTX_new();
-    if (libctx == NULL) {
+    char seedbuf [MAXBUFF];
+    unsigned char randbuf [MAXBUFF];
+    getTimeSubstr(seedbuf);
+    RAND_seed (seedbuf, 8);
+    if (RAND_bytes(randbuf, 16) != 1)
         return 1;
-    }
-
-    rc = RAND_priv_bytes_ex(libctx, randbuf, sizeof(randbuf), 0);
-    OSSL_LIB_CTX_free(libctx);
-
-    if (rc != 1) {
-        return 1;
-    }
-
-    printHex(randbuf, sizeof(randbuf));
+    printStr(randbuf, 16);
     return 0;
 }

@@ -38,7 +38,8 @@ int main(void)
     unsigned char randbuf [MAXBUFF];
     getTimeSubstr(seedbuf);
     RAND_seed (seedbuf, 8);
-    RAND_bytes (randbuf, 16);
+    if (RAND_bytes(randbuf, 16) != 1)
+        return 1;
     printStr(randbuf, 16);
     return 0;
 }
