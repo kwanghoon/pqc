@@ -43,14 +43,14 @@ wget https://www.openssl.org/source/old/1.0.2/openssl-1.0.2u.tar.gz
 
 tar xzf openssl-1.0.2u.tar.gz
 cd openssl-1.0.2u
-export OPENSSL102=`pwd`
+export OPENSSL102=`pwd`/install
 
-./config --prefix=$OPENSSL102 --openssldir=$OPENSSL102
+./config --prefix=$OPENSSL102 --openssldir=$OPENSSL102/openssl 
 
-make -j$(nproc)
+make
 make install
 
-$OPENSSL102/apps/openssl version
+$OPENSSL102/bin/openssl version
 ```
 
 버전 텍스트
@@ -58,15 +58,3 @@ $OPENSSL102/apps/openssl version
 OpenSSL 1.0.2u  20 Dec 2019
 ```
 
-## 빌드 방법
-
-각 예제는 OpenSSL 라이브러리(`libssl`, `libcrypto`)에 의존합니다. 예시:
-
-```bash
-gcc -o mkrand16 ch2/mkrand16.c  -I$OPENSSL102/include -L$OPENSSL102 -lcrypto
-export LD_LIBRARY_PATH=$OPENSSL102:$LD_LIBRARY_PATH; mkrand16
-```
-
-## 참고
-
-- 예제 코드는 최신 OpenSSL 버전에서 사용이 권장되지 않습니다.

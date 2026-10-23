@@ -14,24 +14,17 @@ cd openssl-3.5.8
 export OPENSSL358=`pwd`/install
 echo $OPENSSL358
 
-./config --prefix=$OPENSSL358 --openssldir=$OPENSSL358
+./config --prefix=$OPENSSL358 --openssldir=$OPENSSL358/openssl
 
-make -j$(nproc)
+make
 make install
 ```
 
 ## 설치 확인
 
 ```bash
-export LD_LIBRARY_PATH=`pwd`/install/lib64; ./install/bin/openssl --version
+$OPENSSL358/bin/openssl version
 
 OpenSSL 3.5.8 25 Aug 2026 (Library: OpenSSL 3.5.8 25 Aug 2026)
 ```
-
-(`openssl-3.5.8` 디렉터리에서 실행합니다.) 버전 3.5.8이 출력되면 정상 설치된 것입니다.
-
-## 참고
-
-- `LD_LIBRARY_PATH`는 현재 셸에서만 유효하므로, 새 셸에서는 다시 설정해야 합니다.
-- 시스템에 따라 라이브러리 경로가 `install/lib64` 대신 `install/lib`일 수 있습니다.
 
