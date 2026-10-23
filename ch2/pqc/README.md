@@ -183,18 +183,12 @@ static void printHex(const unsigned char *buf, size_t size)
 OpenSSL 3.5.8 설치는 [../../README_PQC.md](../../README_PQC.md)를 참고한다. 설치 후 `OPENSSL358` 환경 변수가 설정되어 있어야 한다.
 
 ```bash
-export OPENSSL358=<프로젝트 경로>/openssl-3.5.8/install
-echo $OPENSSL358
-
+export OPENSSL358=your-openss-3.5.8-install-dir
 cd ch2/pqc
-gcc -o pqc_mkrand16 pqc_mkrand16.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lcrypto
-export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
-./pqc_mkrand16
-
+make
 ```
 
-- 실행하면 16바이트 난수가 hex 문자열(32자)로 출력된다.
-- 시스템에 따라 라이브러리 경로가 `lib64` 대신 `lib`일 수 있다.
+`make`는 두 프로그램을 빌드한 뒤 차례로 실행합니다. `pqc_mkrand16`은 16바이트 난수를 hex 문자열(32자)로 출력하고, `pqc_mldsa_genkey`는 기본적으로 `pubKey.pem`과 `privKey.pem`을 생성합니다. Makefile은 OpenSSL 라이브러리 경로로 `lib64` 또는 `lib`를 자동으로 선택합니다.
 
 ## pqc_mldsa_genkey.c (rsagenkey.c 전환본)
 
@@ -206,11 +200,9 @@ export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
 - 생성한 키는 ch7 `pqc_hash_sign`, ch5 `pqc_mldsa_sign_test`에서 그대로 사용할 수 있다.
 
 ```bash
-export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
-export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
-
+export OPENSSL358=<프로젝트 경로>/openssl-3.5.8/install
 cd ch2/pqc
-gcc -o pqc_mldsa_genkey pqc_mldsa_genkey.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lcrypto
-./pqc_mldsa_genkey              # pubKey.pem, privKey.pem 생성
-./pqc_mldsa_genkey pub.pem priv.pem   # 파일명 지정
+make
 ```
+
+다른 키 파일명을 사용하려면 `make`로 빌드한 뒤 `./pqc_mldsa_genkey pub.pem priv.pem`처럼 실행합니다.

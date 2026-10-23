@@ -40,5 +40,5 @@ int main(void)
     RAND_seed (seedbuf, 8);
     RAND_bytes (randbuf, 16);
     printStr(randbuf, 16);
-    exit(0);
+    return 0;
 }
