@@ -1,15 +1,23 @@
 # OpenSSL을 이용한 인증서 관리
 
+아래 명령은 OpenSSL 1.0.2u를 사용한다. `$OPENSSL102`는 [루트 README](../README.md#openssl-102u-설치-방법)에서 설정한 설치 경로이므로 실행 파일은 `$OPENSSL102/bin/openssl`이다.
+
+[build.sh](build.sh)를 실행하면 이 문서의 절차를 입력 프롬프트 없이 한 번에 실행하고 결과를 확인한다. ML-DSA-65 전환 절차([README_PQC.md](README_PQC.md))도 이어서 실행한다. 자세한 옵션은 [README_PQC.md](README_PQC.md#6-buildsh로-한-번에-실행)를 참고한다.
+
+```bash
+./build.sh
+```
+
 ## 인증기관 CA의 개인키 및 자기서명 인증서 생성 (루트 인증서 생성)
 
 ```
-$ $OPENSSL102/apps/openssl genrsa -out CAPriv.pem 1024
+$ $OPENSSL102/bin/openssl genrsa -out CAPriv.pem 1024
 Generating RSA private key, 1024 bit long modulus
 ........................+++++
 ..........................................+++++
 e is 65537 (0x10001)
 
-$ $OPENSSL102/apps/openssl req -new -key CAPriv.pem -out CAReq.pem
+$ $OPENSSL102/bin/openssl req -new -key CAPriv.pem -out CAReq.pem
 You are about to be asked to enter information that will be incorporated
 into your certificate request.
 What you are about to enter is what is called a Distinguished Name or a DN.
@@ -30,7 +38,7 @@ to be sent with your certificate request
 A challenge password []:
 An optional company name []:
 
-$ $OPENSSL102/apps/openssl x509 -req -days 3650 -in CAReq.pem -signkey CAPriv.pem -out CACert.pem
+$ $OPENSSL102/bin/openssl x509 -req -days 3650 -in CAReq.pem -signkey CAPriv.pem -out CACert.pem
 Signature ok
 subject=/C=KR/ST=CA-State/L=Gwangju/O=JNU/CN=Gil-Dong
 Getting Private key
@@ -45,7 +53,7 @@ CAPriv.pem, CAReq.pem, CACert.pem 파일들이 생성됨
 
 ```
 Alice:
-$ $OPENSSL102/apps/openssl verify -CAfile CACert.pem CACert.pem 
+$ $OPENSSL102/bin/openssl verify -CAfile CACert.pem CACert.pem 
 ```
 
 CACert.pem: OK 메시지를 출력함
@@ -53,7 +61,7 @@ CACert.pem: OK 메시지를 출력함
 x509 명령어의 -fingerprint 옵션으로 20바이트 핑거프린트를 출력
 
 ```
-$ $OPENSSL102/apps/openssl x509 -noout -in CACert.pem -fingerprint
+$ $OPENSSL102/bin/openssl x509 -noout -in CACert.pem -fingerprint
 SHA1 Fingerprint=65:D0:66:B6:88:4E:05:BC:63:50:94:40:5A:2A:23:07:35:19:39:DB
 ```
 
@@ -62,7 +70,7 @@ SHA1 Fingerprint=65:D0:66:B6:88:4E:05:BC:63:50:94:40:5A:2A:23:07:35:19:39:DB
 Alice가 인증서 서명 신청서를 작성하고 공개키 인증서를 생성
 
 ```
-$ $OPENSSL102/apps/openssl req -new -keyout AlicePriv.pem -subj '/C=KR/ST=CA-State/O=
+$ $OPENSSL102/bin/openssl req -new -keyout AlicePriv.pem -subj '/C=KR/ST=CA-State/O=
 JNU/CN=Alice' -out AliceReq.pem 
 Generating a RSA private key
 .................................................................................................................................+++++
@@ -72,7 +80,7 @@ Enter PEM pass phrase: Alice is making cert
 Verifying - Enter PEM pass phrase: Alice is making cert
 -----
 
-$ $OPENSSL102/apps/openssl x509 -req -days 365 -CA CACert.pem -CAkey CAPriv.pem -CAcreateserial -in AliceReq.pem -out AliceCert.pem 
+$ $OPENSSL102/bin/openssl x509 -req -days 365 -CA CACert.pem -CAkey CAPriv.pem -CAcreateserial -in AliceReq.pem -out AliceCert.pem 
 Signature ok
 subject=/C=KR/ST=CA-State/O=JNU/CN=Alice
 Getting CA Private Key
@@ -81,17 +89,17 @@ Getting CA Private Key
 만든 인증서 AliceCert.pem은 루트 인증서 CACert.pem과 함께 Alice에게 전달하고, Alice는 검증
 
 ```
-$ $OPENSSL102/apps/openssl verify -CAfile CACert.pem CACert.pem
+$ $OPENSSL102/bin/openssl verify -CAfile CACert.pem CACert.pem
 CACert.pem: OK
 
-$ $OPENSSL102/apps/openssl verify -CAfile CACert.pem AliceCert.pem 
+$ $OPENSSL102/bin/openssl verify -CAfile CACert.pem AliceCert.pem 
 AliceCert.pem: OK
 ```
 
 Bob이 인증서 서명 신청서를 작성하고 공개키 인증서를 생성. 기존의 일련번호 파일을 이용한 인증서 생성.
 
 ```
-$ $OPENSSL102/apps/openssl req -new -keyout BobPriv.pem -subj '/C=KR/ST=CA-State/O=JN
+$ $OPENSSL102/bin/openssl req -new -keyout BobPriv.pem -subj '/C=KR/ST=CA-State/O=JN
 U/CN=Bob' -out BobReq.pem -nodes 
 Generating a RSA private key
 .........................................................................................+++++
@@ -99,12 +107,12 @@ Generating a RSA private key
 writing new private key to 'BobPriv.pem'
 -----
 
-$ $OPENSSL102/apps/openssl x509 -req -days 365 -CA CACert.pem -CAkey CAPriv.pem -CAserial CACert.srl -in BobReq.pem -out BobCert.pem
+$ $OPENSSL102/bin/openssl x509 -req -days 365 -CA CACert.pem -CAkey CAPriv.pem -CAserial CACert.srl -in BobReq.pem -out BobCert.pem
 Signature ok
 subject=/C=KR/ST=CA-State/O=JNU/CN=Bob
 Getting CA Private Key
 
-$ $OPENSSL102/apps/openssl x509 -text -noout -in BobCert.pem
+$ $OPENSSL102/bin/openssl x509 -text -noout -in BobCert.pem
 Certificate:
     Data:
         Version: 1 (0x0)
@@ -156,12 +164,12 @@ Certificate:
 ```
 $ cat test.txt
 
-$ $OPENSSL102/apps/openssl smime -sign -in test.txt -inkey AlicePriv.pem -signer AliceCert.pem -out mail.msg
+$ $OPENSSL102/bin/openssl smime -sign -in test.txt -inkey AlicePriv.pem -signer AliceCert.pem -out mail.msg
 Enter pass phrase for AlicePriv.pem:Alice is making cert
 
 $ cat mail.msg
 
-$ $OPENSSL102/apps/openssl smime -verify -in mail.msg -signer AliceCert.pem -CAfile CACert.pem -out recover.txt
+$ $OPENSSL102/bin/openssl smime -verify -in mail.msg -signer AliceCert.pem -CAfile CACert.pem -out recover.txt
 Verification successful
 
 $ cat recover.txt
@@ -172,15 +180,15 @@ $ cat recover.txt
 Alice와 Bob이 각각 상대방의 공개키 인증서 BobCert.pem과 AliceCert.pem을 가지고 있을 때 메시지에 전자 서명을 첨부하고 암호화하여 보내고, 복호화하고 전자 서명을 검증하는 과정
 
 ```
-$ $OPENSSL102/apps/openssl smime -sign -in test.txt -signer AliceCert.pem -inkey AlicePriv.pem -text -out signed.msg
+$ $OPENSSL102/bin/openssl smime -sign -in test.txt -signer AliceCert.pem -inkey AlicePriv.pem -text -out signed.msg
 Enter pass phrase for AlicePriv.pem: Alice is making cert
 
-$ $OPENSSL102/apps/openssl smime -encrypt -in signed.msg -out sien.msg -from Alice -to Bob -subject "Sign and Encryption test" -aes128 BobCert.pem 
+$ $OPENSSL102/bin/openssl smime -encrypt -in signed.msg -out sien.msg -from Alice -to Bob -subject "Sign and Encryption test" -aes128 BobCert.pem 
 ```
 
 ```
-$ $OPENSSL102/apps/openssl smime -decrypt -in sien.msg -out decryp.msg -recip BobCert.pem -inkey BobPriv.pem 
+$ $OPENSSL102/bin/openssl smime -decrypt -in sien.msg -out decryp.msg -recip BobCert.pem -inkey BobPriv.pem 
 
-$ $OPENSSL102/apps/openssl smime -verify -in decryp.msg -out verif.txt -signer AliceCert.pem -CAfile CACert.pem 
+$ $OPENSSL102/bin/openssl smime -verify -in decryp.msg -out verif.txt -signer AliceCert.pem -CAfile CACert.pem 
 Verification successful
 ```

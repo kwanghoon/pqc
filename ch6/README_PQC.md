@@ -7,8 +7,8 @@ ch6에는 전환할 C 프로그램이 없다. 대신 이후 장에서 읽는 PEM
 
 | ch6 파일 | 사용처 |
 |---|---|
-| `BobCert.pem`, `BobPriv.pem` | ch9 `ssl_server.c`, `pqc/pqc_ssl_server.c`가 현재 디렉터리에서 로드 |
-| `CACert.pem` | 서버 인증서 검증 시(`openssl s_client -CAfile`) 사용. 현재 클라이언트 코드는 검증하지 않음 |
+| `BobCert.pem`, `BobPriv.pem` | ch9 `ssl_server.c`는 현재 디렉터리에서 로드하고, `pqc/pqc_ssl_server.c`는 인자로 경로를 받음 |
+| `CACert.pem` | ch9 `pqc/pqc_ssl_client.c`와 `openssl s_client -CAfile`의 서버 인증서 검증에 사용 |
 | Alice 관련 파일, `CAPriv.pem` | ch6 S/MIME 시연에서만 사용 |
 
 ## 2. 원본과 전환본
@@ -22,10 +22,9 @@ ch6에는 전환할 C 프로그램이 없다. 대신 이후 장에서 읽는 PEM
 
 ## 3. 발급 절차 (OpenSSL 3.5 이상)
 
-`ch6/pqc/`의 파일은 아래 절차로 이미 생성되어 있다. 다시 만들려면 `ch6`에서 실행한다.
+`ch6/pqc/`의 파일은 아래 절차로 이미 생성되어 있다. 다시 만들려면 `ch6`에서 실행한다. `$OPENSSL358`은 OpenSSL 3.5.8 설치 경로다(예: `$HOME/pqc/openssl-3.5.8/install`).
 
 ```bash
-export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
 export LD_LIBRARY_PATH=$OPENSSL358/lib64:$LD_LIBRARY_PATH
 OSSL=$OPENSSL358/bin/openssl
 mkdir -p pqc && cd pqc
@@ -63,12 +62,13 @@ $OSSL x509 -in BobCert.pem -noout -text | grep -E "Signature Algorithm|Public Ke
 
 ## 5. ch9 TLS와 함께 확인
 
-`BobCert.pem`, `BobPriv.pem`을 ch9 서버 실행 디렉터리에 복사하고 서버를 띄운 뒤 접속한다.
+`pqc_ssl_server`는 인증서와 키 경로를 인자로 받으므로 파일을 복사할 필요가 없다. 빌드 방법과 클라이언트 실행은 [../ch9/pqc/README.md](../ch9/pqc/README.md)를 참고한다. `openssl s_client`로도 확인할 수 있다.
 
 ```bash
-# ch9/pqc 빌드: gcc -o pqc_ssl_server pqc_ssl_server.c -I$OPENSSL358/include -L$OPENSSL358/lib64 -lssl -lcrypto
-./pqc_ssl_server &
-echo | $OSSL s_client -connect localhost:4433 -CAfile CACert.pem
+# ch9/pqc에서 pqc_ssl_server를 빌드한 뒤
+C=../../ch6/pqc
+./pqc_ssl_server $C/BobCert.pem $C/BobPriv.pem &
+echo | $OSSL s_client -connect localhost:4433 -CAfile $C/CACert.pem
 ```
 
 실제 확인 결과 (OpenSSL 3.5.8):
@@ -79,10 +79,23 @@ Verification: OK
 Protocol: TLSv1.3
 ```
 
-키 교환(X25519MLKEM768)과 서버 인증(ML-DSA-65 인증서)이 모두 양자내성이 된다. ch9 코드는 수정할 필요가 없다.
+키 교환(X25519MLKEM768)과 서버 인증(ML-DSA-65 인증서)이 모두 양자내성이 된다.
 
-## 6. 참고 및 제한
+## 6. build.sh로 한 번에 실행
+
+[build.sh](build.sh)는 [README.md](README.md)의 RSA 절차(OpenSSL 1.0.2u)와 이 문서 3~4절의 ML-DSA-65 절차(OpenSSL 3.5.8)를 차례로 실행한다.
+
+```bash
+./build.sh
+```
+
+- 임시 디렉터리에서 실행하고 끝나면 삭제하므로 `ch6`와 `ch6/pqc`의 기존 PEM 파일은 바뀌지 않는다. 결과를 보려면 `WORKDIR=/path KEEP_WORKDIR=1 ./build.sh`로 실행한다.
+- `OPENSSL102`, `OPENSSL358` 환경 변수로 설치 경로를 바꿀 수 있다. 기본값은 `../../openssl-1.0.2u/install`과 `../../openssl-3.5.8/install`이다.
+- 입력 프롬프트 대신 `-subj`, `-passout`/`-passin` 옵션을 사용한다. 인증서 주체와 Alice 개인키 암호는 문서에 나온 값과 같다.
+- 통과하면 `RSA certificate test passed.`와 `ML-DSA-65 certificate test passed.`를 출력한다.
+- ML-DSA 절차는 `BobCert.pem: OK`와 서명/공개키 알고리즘 `ML-DSA-65`를 확인한다. ch9 TLS 연동(5절)은 포함하지 않는다.
+
+## 7. 참고 및 제한
 
 - Alice 인증서와 S/MIME(`openssl smime`) 시연은 이 문서의 범위에 포함하지 않았다. 필요하면 Bob과 같은 방식으로 발급할 수 있으나 S/MIME 서명의 ML-DSA 지원은 별도 검증이 필요하다.
 - 개인키 파일(`*Priv.pem`)은 테스트용이므로 평문이다. 실제 환경에서는 권한(`chmod 600`)과 암호화를 적용한다.
-- 클라이언트(`pqc_ssl_client.c`)는 인증서를 검증하지 않는다. 검증하려면 `SSL_CTX_load_verify_locations`와 `SSL_VERIFY_PEER` 설정을 추가해야 한다.
