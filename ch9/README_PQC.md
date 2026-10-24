@@ -14,10 +14,16 @@
 
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
-| [ssl_client.c](ssl_client.c) | [pqc/pqc_ssl_client.c](pqc/pqc_ssl_client.c) | TLS 1.3 + 하이브리드 ML-KEM 그룹, ML-DSA 서버 인증서 검증(CA, 호스트명) |
-| [ssl_server.c](ssl_server.c) | [pqc/pqc_ssl_server.c](pqc/pqc_ssl_server.c) | TLS 1.3 + 하이브리드 ML-KEM 그룹, ML-DSA-65 인증서/키 (인자로 지정) |
+| [ssl_client.c](ssl_client.c) | [pqc/pqc_ssl_client.c](pqc/pqc_ssl_client.c) | `TLS_client_method`, TLS 1.3 고정, 하이브리드 ML-KEM 그룹, `mldsa65` 서명 알고리즘 |
+| [ssl_server.c](ssl_server.c) | [pqc/pqc_ssl_server.c](pqc/pqc_ssl_server.c) | `TLS_server_method`, TLS 1.3 고정, 하이브리드 ML-KEM 그룹, `mldsa65` 서명 알고리즘, ML-DSA-65 키 검사 |
 
-인증서와 키는 [ch6/pqc](../ch6/pqc)에서 발급한다. 실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+두 쌍은 알고리즘 전환에 필요한 부분만 다르다. 원본에는 서버 인증서 검증이 없었는데, 양쪽 클라이언트에 모두 추가했다(`CACert.pem`, 호스트명 `localhost`, `SSL_VERIFY_PEER`). 양쪽 모두 다음도 동일하게 바꿨다.
+
+- 반환값 검사: `SSL_CTX_new`, `BIO_new*`, `SSL_CTX_*` 설정/로딩 호출 등 이전에 없던 검사를 추가하고, 서버의 `assert`를 `if`로 바꿨다.
+- 오류 종료 코드: `exit(1)`/`return 0`을 모두 `return 1`로 통일했다.
+- 클라이언트가 `Negotiated: 버전, group 그룹, cipher 암호` 한 줄을 출력한다. 원본(OpenSSL 1.0.2)에는 `SSL_get0_group_name`이 없어서 `SSL_get_server_tmp_key`로 EC 곡선 이름을 구한다. 원본의 서버는 기본 설정으로 RSA 키 교환(`AES256-GCM-SHA384`)을 협상하므로 `group none`이 출력된다.
+
+인증서와 키는 `Makefile`이 테스트 디렉터리에서 새로 발급한다(원본은 RSA, 전환본은 ML-DSA-65, 모두 `CN=localhost`). 차이점과 실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
 
 ## 2. 현재 취약 암호 사용
 
@@ -80,12 +86,17 @@
 - `SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION)`
   - `ctx`: TLS 컨텍스트
   - `TLS1_3_VERSION`: 최소 프로토콜 버전
-- `SSL_CTX_set_ciphersuites(ctx, "TLS_AES_256_GCM_SHA384:...")`
+- `SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION)`
+  - 하이브리드 ML-KEM 그룹은 TLS 1.3에만 있으므로 TLS 1.3으로 고정
+- `SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024")`
   - `ctx`: TLS 컨텍스트
-  - `"TLS_AES_256_GCM_SHA384:..."`: 허용되는 TLS 1.3 암호 스위트 목록
-- `SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:secp256r1")`
-  - `ctx`: TLS 컨텍스트
-  - `"X25519MLKEM768:secp256r1"`: 혼합형 키 교환 그룹 목록
+  - 하이브리드 ML-KEM 그룹만 허용하고 고전 단독 그룹은 넣지 않는다.
+- `SSL_CTX_set1_sigalgs_list(ctx, "mldsa65")`
+  - 서명 알고리즘을 ML-DSA-65로 제한
+- `SSL_CTX_load_verify_locations(ctx, "CACert.pem", NULL)` / `SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL)` / `X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), "localhost", 0)` (클라이언트)
+  - CA 인증서로 서버 인증서 체인과 호스트명을 검증
+- `EVP_PKEY_is_a(SSL_CTX_get0_privatekey(ctx), "ML-DSA-65")` (서버)
+  - ML-DSA-65가 아닌 키는 거부
 - `SSL_CTX_use_certificate_file(ctx, "BobCert.pem", SSL_FILETYPE_PEM)`
   - 인증서 파일 경로 변경
 - `SSL_CTX_use_PrivateKey_file(ctx, "BobPriv.pem", SSL_FILETYPE_PEM)`
@@ -97,8 +108,9 @@
 - `ctx`: 모든 필수 보안 정책을 담는 컨텍스트
 - `ciphersuites`: 허용 가능한 암호 스위트
 - `groups`: 키 교환 그룹 선택
-- `"X25519MLKEM768:secp256r1"`: 하이브리드 키 교환 조합 예시
-- `BobCert.pem (ch6/pqc)` / `BobPriv.pem (ch6/pqc)`: PQC 인증서와 키 파일
+- `"X25519MLKEM768:SecP384r1MLKEM1024"`: 하이브리드 키 교환 조합
+- `"mldsa65"`: 서명 알고리즘
+- `BobCert.pem` / `BobPriv.pem` / `CACert.pem`: ML-DSA-65 인증서, 키, CA 인증서 (ch6/pqc 방식으로 발급)
 
 권장 방식:
 - 서버와 클라이언트가 동일한 보안 정책 집합을 사용해야 한다.
@@ -128,6 +140,7 @@
 - `SSL_CTX_new()`에 메서드 등록
 
 전환 후:
+- OpenSSL 3.x는 라이브러리를 자동 초기화하므로 `SSL_library_init()`/`SSL_load_error_strings()`와 `bio_err`를 제거
 - TLS 라이브러리 초기화와 보안 프로토콜 선택을 현대 구조로 정비
 - 하이브리드 키 교환 그룹 설정
 - 서명 알고리즘 및 인증서 검증 규칙을 초기화 시점에 강제
@@ -176,3 +189,20 @@
 ## 6. 요약
 
 이 장은 가장 대표적인 네트워크 보안 예제로, PQC 전환의 가장 큰 영향이 발생하는 지점이다. ch9는 단순한 예제 코드가 아니라 “네트워크 보안 프로토콜 전반”을 보여주기 때문에, TLS 레벨의 전환을 어떻게 설계할 것인지가 가장 중요하다. 즉, PQC 전환은 코드 변경뿐 아니라 TLS 보안 정책, 인증서 체인, 핸드셰이크 알고리즘 설계를 함께 바꾸는 작업으로 이해해야 한다.
+
+## 7. 빌드 및 테스트 스크립트
+
+[build.sh](build.sh)는 원본과 전환본의 빌드와 테스트를 한 번에 실행한다.
+
+```bash
+./build.sh
+```
+
+```sh
+cd ch9
+make OPENSSL102=...          # ssl_client/ssl_server (OpenSSL 1.0.2u, RSA)
+cd pqc
+make OPENSSL358=...          # pqc_ssl_client/pqc_ssl_server (OpenSSL 3.5.8, ML-KEM/ML-DSA-65)
+```
+
+각 `make`는 테스트 디렉터리에 CA와 `CN=localhost` 서버 인증서를 발급한 뒤, 서버를 백그라운드로 띄워 연결 성공과 `Connection Established` 응답을 확인하고, 다른 CA로 검증하는 클라이언트가 서버 인증서를 거부하는지 확인한다. 전환본은 추가로 `TLSv1.3`과 ML-KEM 그룹 협상을 확인하고, RSA 키를 준 서버가 종료하는지 확인한다.
