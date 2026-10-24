@@ -7,7 +7,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
+#include <openssl/err.h>
 #include <openssl/rsa.h>
 #include <openssl/rand.h>
 #include <openssl/pem.h>
@@ -15,103 +15,245 @@
 
 void getTimeSubstr(unsigned char *seedbuff);
 
-void makeRSAKeyFile(RSA **rsaPriv, RSA **rsaPub,
-                    char *privkeyFn, char *pubKeyFn);
+int generate_rsa_key(RSA **rsaPriv, RSA **rsaPub);
 
-void encryptRSAFile(RSA *rsaPub, char *pfn, char *cfn);
+int write_key_files(RSA *rsaPriv, RSA *rsaPub,
+                    const char *privkeyFn, const char *pubKeyFn);
 
-void decryptRSAFile(RSA *rsaPriv, char *cfn, char *dfn);
+int encryptRSAFile(RSA *rsaPub, char *pfn, char *cfn);
+
+int decryptRSAFile(RSA *rsaPriv, char *cfn, char *dfn);
 
 int main(int argc, char *argv[])
 {
     RSA *rsaPriv = NULL, *rsaPub = NULL;
     unsigned char seedbuff[MAXBUFF];
-    assert(argc == 6);
+    int result = 1;
+    int operation_result;
+
+    if (argc != 6) {
+        fprintf(stderr, "usage: %s <private key file> <public key file> "
+                "<input file> <ciphertext/envelope file> <output file>\n",
+                argv[0]);
+        return 1;
+    }
     getTimeSubstr(seedbuff);
     RAND_seed(seedbuff, 8);
 
-    makeRSAKeyFile(&rsaPriv, &rsaPub, argv[1], argv[2]);
+    operation_result = generate_rsa_key(&rsaPriv, &rsaPub);
+    if (operation_result == 0)
+        goto cleanup;
+    operation_result = write_key_files(rsaPriv, rsaPub, argv[1], argv[2]);
+    if (operation_result == 0)
+        goto cleanup;
+    operation_result = encryptRSAFile(rsaPub, argv[3], argv[4]);
+    if (operation_result == 0)
+        goto cleanup;
+    operation_result = decryptRSAFile(rsaPriv, argv[4], argv[5]);
+    if (operation_result == 0)
+        goto cleanup;
+    result = 0;
 
-    encryptRSAFile(rsaPub, argv[3], argv[4]);
-
-    decryptRSAFile(rsaPriv, argv[4], argv[5]);
-    
+cleanup:
     RSA_free(rsaPriv);
     RSA_free(rsaPub);
-    return (0);
+    return result;
 }
 
-void makeRSAKeyFile(RSA **rsaPriv, RSA **rsaPub, char *privKeyFn, char *pubKeyFn)
+int generate_rsa_key(RSA **rsaPriv, RSA **rsaPub)
 {
-    FILE *fp;
-    int res;
     *rsaPriv = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+    if (*rsaPriv == NULL) {
+        fprintf(stderr, "RSA_generate_key failed\n");
+        ERR_print_errors_fp(stderr);
+        return 0;
+    }
 
-    assert(*rsaPriv);
     *rsaPub = RSAPublicKey_dup(*rsaPriv);
-    assert(*rsaPub);
+    if (*rsaPub == NULL) {
+        fprintf(stderr, "RSAPublicKey_dup failed\n");
+        ERR_print_errors_fp(stderr);
+        RSA_free(*rsaPriv);
+        *rsaPriv = NULL;
+        return 0;
+    }
+    return 1;
+}
+
+int write_key_files(RSA *rsaPriv, RSA *rsaPub,
+                    const char *privKeyFn, const char *pubKeyFn)
+{
+    FILE *fp = NULL;
+    int res;
+    int result = 0;
 
     fp = fopen(privKeyFn, "wb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(privKeyFn);
+        goto cleanup;
+    }
 
-    res = PEM_write_RSAPrivateKey(fp, *rsaPriv, NULL, NULL, 0, NULL, NULL);
-
-    assert(res);
-
-    fclose(fp);
+    res = PEM_write_RSAPrivateKey(fp, rsaPriv, NULL, NULL, 0, NULL, NULL);
+    if (res != 1) {
+        fprintf(stderr, "PEM_write_RSAPrivateKey failed\n");
+        ERR_print_errors_fp(stderr);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(privKeyFn);
+        goto cleanup;
+    }
+    fp = NULL;
     fp = fopen(pubKeyFn, "wb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(pubKeyFn);
+        goto cleanup;
+    }
 
-    res = PEM_write_RSAPublicKey(fp, *rsaPub);
-    assert(res);
+    res = PEM_write_RSAPublicKey(fp, rsaPub);
+    if (res != 1) {
+        fprintf(stderr, "PEM_write_RSAPublicKey failed\n");
+        ERR_print_errors_fp(stderr);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(pubKeyFn);
+        goto cleanup;
+    }
+    fp = NULL;
+    result = 1;
 
-    fclose(fp);
+cleanup:
+    if (fp != NULL && fclose(fp) != 0)
+        perror("fclose");
+    return result;
 }
 
-void encryptRSAFile(RSA *rsaPub, char *pfn, char *cfn)
+int encryptRSAFile(RSA *rsaPub, char *pfn, char *cfn)
 {
-    FILE *fp;
+    FILE *fp = NULL;
     unsigned char ptext[MAXBUFF];
     unsigned char ctext[MAXBUFF];
-    int psize, csize;
+    size_t bytes_read;
+    int csize;
+    int output_created = 0;
+    int result = 0;
+
     fp = fopen(pfn, "rb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(pfn);
+        goto cleanup;
+    }
 
-    psize = fread(ptext, 1, RSA_size(rsaPub) - 42, fp);
-    fclose(fp);
+    bytes_read = fread(ptext, 1, (size_t)(RSA_size(rsaPub) - 42), fp);
+    if (ferror(fp)) {
+        perror(pfn);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(pfn);
+        goto cleanup;
+    }
+    fp = NULL;
 
-    csize = RSA_public_encrypt(psize, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING);
-    assert(csize >= 0);
+    csize = RSA_public_encrypt((int)bytes_read, ptext, ctext, rsaPub,
+                               RSA_PKCS1_OAEP_PADDING);
+    if (csize <= 0) {
+        fprintf(stderr, "RSA_public_encrypt failed\n");
+        ERR_print_errors_fp(stderr);
+        goto cleanup;
+    }
     fp = fopen(cfn, "wb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(cfn);
+        goto cleanup;
+    }
+    output_created = 1;
 
-    fwrite(ctext, 1, csize, fp);
+    if (fwrite(ctext, 1, (size_t)csize, fp) != (size_t)csize) {
+        perror(cfn);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(cfn);
+        goto cleanup;
+    }
+    fp = NULL;
+    result = 1;
 
-    fclose(fp);
+cleanup:
+    if (fp != NULL && fclose(fp) != 0)
+        perror("fclose");
+    if (!result && output_created)
+        remove(cfn);
+    return result;
 }
 
-void decryptRSAFile(RSA *rsaPriv, char *cfn, char *dfn)
+int decryptRSAFile(RSA *rsaPriv, char *cfn, char *dfn)
 {
-    FILE *fp;
+    FILE *fp = NULL;
     unsigned char ctext[MAXBUFF];
     unsigned char dtext[MAXBUFF];
-    int csize, dsize;
+    size_t bytes_read;
+    int dsize;
+    int output_created = 0;
+    int result = 0;
+
     fp = fopen(cfn, "rb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(cfn);
+        goto cleanup;
+    }
 
-    csize = fread(ctext, 1, MAXBUFF, fp);
-    fclose(fp);
+    bytes_read = fread(ctext, 1, sizeof(ctext), fp);
+    if (ferror(fp)) {
+        perror(cfn);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(cfn);
+        goto cleanup;
+    }
+    fp = NULL;
 
-    dsize = RSA_private_decrypt(csize, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING);
-
-    assert(dsize >= 0);
+    dsize = RSA_private_decrypt((int)bytes_read, ctext, dtext, rsaPriv,
+                                RSA_PKCS1_OAEP_PADDING);
+    if (dsize < 0) {
+        fprintf(stderr, "RSA_private_decrypt failed\n");
+        ERR_print_errors_fp(stderr);
+        goto cleanup;
+    }
 
     fp = fopen(dfn, "wb");
-    assert(fp);
+    if (fp == NULL) {
+        perror(dfn);
+        goto cleanup;
+    }
+    output_created = 1;
 
-    fwrite(dtext, 1, dsize, fp);
+    if (fwrite(dtext, 1, (size_t)dsize, fp) != (size_t)dsize) {
+        perror(dfn);
+        goto cleanup;
+    }
+    if (fclose(fp) != 0) {
+        fp = NULL;
+        perror(dfn);
+        goto cleanup;
+    }
+    fp = NULL;
+    result = 1;
 
-    fclose(fp);
+cleanup:
+    if (fp != NULL && fclose(fp) != 0)
+        perror("fclose");
+    if (!result && output_created)
+        remove(dfn);
+    return result;
 }
 
 void getTimeSubstr(unsigned char *buff)

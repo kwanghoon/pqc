@@ -2,16 +2,19 @@
  * pqc_mlkem_file.c
  *
  * Demonstrate file encryption with an ML-KEM-768 encapsulated key and
- * AES-256-GCM. The generated key pair is temporary and is used to decrypt
- * the envelope during the same run.
+ * AES-256-GCM. A new key pair is saved to the supplied PEM files and used
+ * to decrypt the envelope during the same run.
+ *
+ * Usage:
+ *   pqc_mlkem_file <private-key> <public-key> <input> <envelope> <output>
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
+#include <openssl/pem.h>
 
 #define KEM_CIPHERTEXT_MAX 2048
 #define KEM_SECRET_LEN 32
@@ -19,47 +22,47 @@
 #define GCM_TAG_LEN 16
 #define FILE_CHUNK_LEN 4096
 
-static int report_openssl_error(const char *operation)
-{
-    fprintf(stderr, "%s failed\n", operation);
-    ERR_print_errors_fp(stderr);
-    return 0;
-}
+static int report_openssl_error(const char *operation);
+static int write_bytes(FILE *file, const unsigned char *data, size_t length);
+static int write_u32(FILE *file, unsigned int value);
+static int read_u32(FILE *file, unsigned int *value);
+static EVP_PKEY *generate_mlkem_key(void);
+static int write_key_files(EVP_PKEY *key, const char *private_path,
+                           const char *public_path);
+static int encrypt_file(EVP_PKEY *key, const char *input_path,
+                        const char *envelope_path);
+static int decrypt_file(EVP_PKEY *key, const char *envelope_path,
+                        const char *output_path);
 
-static int write_bytes(FILE *file, const unsigned char *data, size_t length)
+int main(int argc, char *argv[])
 {
-    if (fwrite(data, 1, length, file) != length) {
-        perror("fwrite");
-        return 0;
+    EVP_PKEY *key = NULL;
+    int result = 1;
+    int operation_result;
+
+    if (argc != 6) {
+        fprintf(stderr, "usage: %s <private key file> <public key file> "
+                "<input file> <ciphertext/envelope file> <output file>\n",
+                argv[0]);
+        return 1;
     }
-    return 1;
-}
+    key = generate_mlkem_key();
+    if (key == NULL)
+        goto cleanup;
+    operation_result = write_key_files(key, argv[1], argv[2]);
+    if (operation_result == 0)
+        goto cleanup;
+    operation_result = encrypt_file(key, argv[3], argv[4]);
+    if (operation_result == 0)
+        goto cleanup;
+    operation_result = decrypt_file(key, argv[4], argv[5]);
+    if (operation_result == 0)
+        goto cleanup;
+    result = 0;
 
-static int write_u32(FILE *file, unsigned int value)
-{
-    unsigned char encoded[4] = {
-        (unsigned char)(value >> 24),
-        (unsigned char)(value >> 16),
-        (unsigned char)(value >> 8),
-        (unsigned char)value
-    };
-
-    return write_bytes(file, encoded, sizeof(encoded));
-}
-
-static int read_u32(FILE *file, unsigned int *value)
-{
-    unsigned char encoded[4];
-
-    if (fread(encoded, 1, sizeof(encoded), file) != sizeof(encoded)) {
-        fprintf(stderr, "Could not read envelope header\n");
-        return 0;
-    }
-    *value = ((unsigned int)encoded[0] << 24) |
-             ((unsigned int)encoded[1] << 16) |
-             ((unsigned int)encoded[2] << 8) |
-             (unsigned int)encoded[3];
-    return 1;
+cleanup:
+    EVP_PKEY_free(key);
+    return result;
 }
 
 static EVP_PKEY *generate_mlkem_key(void)
@@ -86,6 +89,42 @@ static EVP_PKEY *generate_mlkem_key(void)
     }
     EVP_PKEY_CTX_free(ctx);
     return key;
+}
+
+static int write_key_files(EVP_PKEY *key, const char *private_path,
+                           const char *public_path)
+{
+    FILE *file;
+    int result;
+
+    file = fopen(private_path, "wb");
+    if (file == NULL) {
+        perror(private_path);
+        return 0;
+    }
+    result = PEM_write_PrivateKey(file, key, NULL, NULL, 0, NULL, NULL);
+    if (result != 1)
+        report_openssl_error("PEM_write_PrivateKey");
+    if (fclose(file) != 0) {
+        perror(private_path);
+        result = 0;
+    }
+    if (result != 1)
+        return 0;
+
+    file = fopen(public_path, "wb");
+    if (file == NULL) {
+        perror(public_path);
+        return 0;
+    }
+    result = PEM_write_PUBKEY(file, key);
+    if (result != 1)
+        report_openssl_error("PEM_write_PUBKEY");
+    if (fclose(file) != 0) {
+        perror(public_path);
+        result = 0;
+    }
+    return result == 1;
 }
 
 static int encrypt_file(EVP_PKEY *key, const char *input_path,
@@ -386,26 +425,45 @@ cleanup:
     return success;
 }
 
-int main(int argc, char *argv[])
+static int report_openssl_error(const char *operation)
 {
-    EVP_PKEY *key;
-    int result = EXIT_FAILURE;
+    fprintf(stderr, "%s failed\n", operation);
+    ERR_print_errors_fp(stderr);
+    return 0;
+}
 
-    if (argc != 4) {
-        fprintf(stderr, "usage: %s <input file> <envelope file> <output file>\n",
-                argv[0]);
-        return EXIT_FAILURE;
+static int write_bytes(FILE *file, const unsigned char *data, size_t length)
+{
+    if (fwrite(data, 1, length, file) != length) {
+        perror("fwrite");
+        return 0;
     }
-    key = generate_mlkem_key();
-    if (key == NULL)
-        return EXIT_FAILURE;
-    if (!encrypt_file(key, argv[1], argv[2]))
-        goto cleanup;
-    if (!decrypt_file(key, argv[2], argv[3]))
-        goto cleanup;
-    result = EXIT_SUCCESS;
+    return 1;
+}
 
-cleanup:
-    EVP_PKEY_free(key);
-    return result;
+static int write_u32(FILE *file, unsigned int value)
+{
+    unsigned char encoded[4] = {
+        (unsigned char)(value >> 24),
+        (unsigned char)(value >> 16),
+        (unsigned char)(value >> 8),
+        (unsigned char)value
+    };
+
+    return write_bytes(file, encoded, sizeof(encoded));
+}
+
+static int read_u32(FILE *file, unsigned int *value)
+{
+    unsigned char encoded[4];
+
+    if (fread(encoded, 1, sizeof(encoded), file) != sizeof(encoded)) {
+        fprintf(stderr, "Could not read envelope header\n");
+        return 0;
+    }
+    *value = ((unsigned int)encoded[0] << 24) |
+             ((unsigned int)encoded[1] << 16) |
+             ((unsigned int)encoded[2] << 8) |
+             (unsigned int)encoded[3];
+    return 1;
 }

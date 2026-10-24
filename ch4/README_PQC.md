@@ -1,75 +1,90 @@
-# ch4 PQC 파일 암호화 예제
+# ch4 RSA에서 ML-KEM으로의 전환
 
-## 목적
+## 전환 대상과 대응 구조
 
-[rsatest.c](rsatest.c)는 RSA 공개키로 파일 내용을 직접 암호화하고 개인키로 복호화하는 예제다. RSA는 양자 컴퓨터 공격에 취약하고, 공개키 암호화는 처리 가능한 입력 크기도 제한적이다.
+[rsatest.c](rsatest.c)는 RSA 공개키로 파일 데이터를 직접 암호화하는 예제이고,
+[pqc/pqc_mlkem_file.c](pqc/pqc_mlkem_file.c)는 ML-KEM 키 캡슐화와
+AES-256-GCM을 결합한 하이브리드 암호화 예제입니다. ML-KEM은 파일 데이터를
+직접 암호화하는 알고리즘이 아니므로, 공유 비밀을 만들고 대칭키 암호로
+파일을 처리합니다.
 
-[pqc/pqc_mlkem_file.c](pqc/pqc_mlkem_file.c)는 이 흐름을 ML-KEM 기반 키 캡슐화와 AES-256-GCM 파일 암호화로 대체한다. RSA 암호 관련 API는 사용하지 않는다.
+두 프로그램의 `main()` 흐름은 다음과 같이 대응합니다.
 
-## 원본과 전환본
-
-| 원본 | 전환본 | 변경 내용 |
+| RSA 원본 | ML-KEM 전환본 | 역할 |
 |---|---|---|
-| [rsatest.c](rsatest.c) | [pqc/pqc_mlkem_file.c](pqc/pqc_mlkem_file.c) | RSA-OAEP 직접 암호화 → ML-KEM-768 + AES-256-GCM |
-| [rsa_des_crc.c](rsa_des_crc.c) | [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c) | RSA + 3DES-CBC 전자 봉투 → ML-KEM-768 + AES-256-GCM 봉투 |
+| `generate_rsa_key()` | `generate_mlkem_key()` | 메모리의 키 객체 생성 |
+| `write_key_files()` | `write_key_files()` | 개인키·공개키 PEM 기록 |
+| `encryptRSAFile()` | `encrypt_file()` | 입력 파일 암호화 |
+| `decryptRSAFile()` | `decrypt_file()` | 암호문 복호화 |
 
-## 암호화 흐름
+RSA는 개인키와 복제한 공개키를 별도 `RSA` 객체로 관리합니다. ML-KEM은
+키 쌍을 `EVP_PKEY` 객체 하나로 관리합니다. 두 프로그램 모두 키 파일을
+기록하지만, 현재 실행의 암·복호화에는 메모리 키 객체를 사용합니다.
 
-1. OpenSSL 3.5.8의 `ML-KEM-768`으로 임시 키 쌍을 생성한다.
-2. `EVP_PKEY_encapsulate_init()`과 `EVP_PKEY_encapsulate()`로 공유 비밀과 KEM 암호문을 만든다.
-3. 공유 비밀의 32바이트 키를 사용하고, `RAND_bytes()`로 생성한 12바이트 nonce와 함께 `EVP_aes_256_gcm()`으로 입력 파일을 암호화한다.
-4. 봉투 파일에 KEM 암호문, nonce, AES-GCM 암호문 및 16바이트 인증 태그를 기록한다.
-5. `EVP_PKEY_decapsulate_init()`과 `EVP_PKEY_decapsulate()`로 공유 비밀을 복원한 뒤, 인증 태그를 검증하며 AES-GCM 복호화를 수행한다.
+## RSA 원본의 입력 크기 제한
 
-봉투 형식은 다음 순서다.
+RSA 원본은 RSA-1024와 RSA-OAEP를 사용합니다. OAEP 입력 한도는 86바이트이며,
+`encryptRSAFile()`은 입력 파일에서 최대 그 크기만 읽어 한 번에 암호화합니다.
+따라서 더 긴 파일의 나머지는 암호화 결과에 포함되지 않습니다.
+또한 원본은 `getTimeSubstr()`로 만든 시간 문자열을 `RAND_seed()`에 전달합니다.
+이는 ML-KEM 전환본에는 없는 레거시 난수 초기화 코드입니다.
+
+## ML-KEM 파일 암호화 흐름
+
+전환본은 OpenSSL 3.5.8의 ML-KEM-768을 사용합니다.
+
+1. `EVP_PKEY_generate()`로 새 ML-KEM 키 쌍을 생성하고, 지정한 경로에
+   개인키와 공개키를 PEM으로 기록합니다. 기존 키 파일은 덮어씁니다.
+2. `EVP_PKEY_encapsulate()`로 공유 비밀과 KEM 암호문을 생성합니다.
+3. `RAND_bytes()`로 12바이트 nonce를 생성하고, 공유 비밀을 AES-256-GCM 키로
+   사용해 입력 파일을 4096바이트 단위로 암호화합니다.
+4. 봉투에 KEM 암호문, nonce, AES-GCM 암호문, 16바이트 인증 태그를 기록합니다.
+5. `EVP_PKEY_decapsulate()`로 공유 비밀을 복원하고 GCM 인증 태그를 검증하며
+   복호화합니다. 암호화 실패 시 지정된 봉투 경로가 제거되며, 복호화 실패
+   후 출력 파일을 만든 경우 부분 복호화 파일을 제거합니다.
+
+난수 시드 데이터를 직접 구성하거나 `RAND_seed()`를 호출하지 않습니다.
+키 생성, KEM 캡슐화, nonce 생성에 필요한 난수는 OpenSSL 난수 생성기가
+처리합니다.
+
+봉투 파일 필드 순서:
 
 | 필드 | 크기 |
 |---|---:|
 | 매직 값 `PQM1` | 4바이트 |
-| KEM 암호문 길이 | 4바이트 (big-endian) |
+| KEM 암호문 길이 | 4바이트, big-endian |
 | ML-KEM 암호문 | 길이 필드에 지정된 크기 |
 | AES-GCM nonce | 12바이트 |
-| AES-GCM 암호문 | 나머지 데이터에서 태그 크기를 뺀 길이 |
+| AES-GCM 암호문 | 태그 직전까지의 데이터 |
 | AES-GCM 인증 태그 | 16바이트 |
-
-인증 태그 검증에 실패하면 복호화는 실패하며 부분 출력 파일을 제거한다.
 
 ## 빌드 및 실행
 
-아래 예시는 OpenSSL 3.5.8이 `/home/khchoi/work/pqc/openssl-3.5.8/install`에 설치된 환경을 기준으로 한다. `pqc_mlkem_file`은 `입력 파일 봉투 파일 복호화 결과 파일` 순서로 경로를 인자로 받는다.
+ch4 통합 빌드와 왕복 테스트는 상위 디렉터리의 [build.sh](build.sh)로
+수행합니다. 상세한 명령은 [README.md](README.md#빌드-및-통합-테스트)를
+참고하세요. ML-KEM 프로그램만 빌드·실행하려면:
 
 ```sh
-export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
-cd /home/khchoi/work/pqc/ch4/pqc
-
-gcc -o pqc_mlkem_file pqc_mlkem_file.c \
-    -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
-
-export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-./pqc_mlkem_file ../foo.txt foo.enc foo.dec
-diff ../foo.txt ./foo.dec
+cd pqc
+make OPENSSL358=/path/to/openssl-3.5.8/install
 ```
 
-정상 실행 시 지정한 봉투 파일과 복호화 결과 파일이 생성된다. `diff` 출력이 없으면 복호화 결과가 입력 파일과 일치한다.
+`pqc_mlkem_file`의 인자 순서는 원본과 동일합니다.
 
-이 예제는 시연을 위해 키 쌍을 매 실행마다 메모리에서 생성하고 같은 실행 중 복호화한다. 개인키를 저장하거나 봉투와 함께 배포하지 않으므로, 생성된 봉투는 다음 실행에서 복호화할 수 없다.
-
-## 전자 봉투 예제
-
-[rsa_des_crc.c](rsa_des_crc.c)는 RSA로 3DES 세션 키를 보호하는 전자 봉투 예제다. 대응하는 [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c)는 RSA 대신 ML-KEM-768으로 AES-256 키를 캡슐화하고, 3DES-CBC 대신 AES-256-GCM으로 데이터를 암호화·인증한다. 봉투 헤더(매직 값, KEM 암호문, nonce)도 GCM의 추가 인증 데이터로 보호한다.
-
-인자는 원본과 동일하게 `공개키 개인키 평문 봉투 복호문` 순서다. 키 파일이 없으면 ML-KEM-768 키 쌍을 PEM(`PUBLIC KEY`, `PRIVATE KEY`)으로 생성하며, 개인키는 0600 권한으로 저장한다.
-
-```sh
-export OPENSSL358=/home/khchoi/work/pqc/openssl-3.5.8/install
-cd /home/khchoi/work/pqc/ch4/pqc
-
-gcc -o pqc_mlkem_envelope pqc_mlkem_envelope.c \
-    -I"$OPENSSL358/include" -L"$OPENSSL358/lib64" -lcrypto
-
-export LD_LIBRARY_PATH="$OPENSSL358/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-./pqc_mlkem_envelope mlkem_pub.pem mlkem_priv.pem ../plain.txt envelope.bin plain_out.txt
-diff ../plain.txt plain_out.txt
+```text
+pqc_mlkem_file <private key file> <public key file> <input file> <envelope file> <output file>
 ```
 
-봉투 형식은 `PQE1`(4바이트), KEM 암호문 길이(4바이트, big-endian), ML-KEM 암호문, nonce(12바이트), AES-GCM 암호문, 인증 태그(16바이트) 순서다. 인증에 실패하면 복호문 파일을 남기지 않는다.
+실행마다 새 키 쌍을 생성해 PEM 파일에 기록(덮어쓰기)하고, 같은 실행에서
+그 키 객체로 봉투를 암·복호화합니다. 기존 키 파일을 읽지 않으므로 이전
+실행에서 만든 봉투를 복호화하는 프로그램은 아닙니다. 개인키는 PKCS#8
+`PRIVATE KEY`, 공개키는 SubjectPublicKeyInfo `PUBLIC KEY` PEM으로 기록하며,
+파일 권한은 프로세스의 umask를 따릅니다.
+
+## ML-KEM 전자 봉투 예제
+
+[rsa_des_crc.c](rsa_des_crc.c)는 RSA로 3DES 세션 키를 보호하는 별도
+예제입니다. 대응 예제인 [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c)는
+ML-KEM-768과 AES-256-GCM을 사용합니다. 이는 `pqc_mlkem_file.c`와 별도의
+프로그램이며, 키 파일 읽기 및 재사용을 지원합니다. 빌드·인자 사용법은
+[pqc/README.md](pqc/README.md)를 참고하세요.
