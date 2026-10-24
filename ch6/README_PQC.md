@@ -7,7 +7,7 @@ ch6에는 전환할 C 프로그램이 없다. 대신 이후 장에서 읽는 PEM
 
 | ch6 파일 | 사용처 |
 |---|---|
-| `BobCert.pem`, `BobPriv.pem` | ch9 `ssl_server.c`는 현재 디렉터리에서 로드하고, `pqc/pqc_ssl_server.c`는 인자로 경로를 받음 |
+| `BobCert.pem`, `BobPriv.pem` | ch9 `ssl_server.c`와 `pqc/pqc_ssl_server.c`가 현재 디렉터리에서 로드 |
 | `CACert.pem` | ch9 `pqc/pqc_ssl_client.c`와 `openssl s_client -CAfile`의 서버 인증서 검증에 사용 |
 | Alice 관련 파일, `CAPriv.pem` | ch6 S/MIME 시연에서만 사용 |
 
@@ -62,13 +62,14 @@ $OSSL x509 -in BobCert.pem -noout -text | grep -E "Signature Algorithm|Public Ke
 
 ## 5. ch9 TLS와 함께 확인
 
-`pqc_ssl_server`는 인증서와 키 경로를 인자로 받으므로 파일을 복사할 필요가 없다. 빌드 방법과 클라이언트 실행은 [../ch9/pqc/README.md](../ch9/pqc/README.md)를 참고한다. `openssl s_client`로도 확인할 수 있다.
+`pqc_ssl_server`와 `pqc_ssl_client`는 현재 디렉터리에서 `BobCert.pem`, `BobPriv.pem`, `CACert.pem`을 읽으므로 `ch9/pqc`에 복사해서 실행한다. 빌드 방법과 클라이언트 실행은 [../ch9/pqc/README.md](../ch9/pqc/README.md)를 참고한다. `openssl s_client`로도 확인할 수 있다.
 
 ```bash
 # ch9/pqc에서 pqc_ssl_server를 빌드한 뒤
 C=../../ch6/pqc
-./pqc_ssl_server $C/BobCert.pem $C/BobPriv.pem &
-echo | $OSSL s_client -connect localhost:4433 -CAfile $C/CACert.pem
+cp $C/{CACert.pem,BobCert.pem,BobPriv.pem} .
+./pqc_ssl_server &
+echo | $OSSL s_client -connect localhost:4433 -CAfile CACert.pem
 ```
 
 실제 확인 결과 (OpenSSL 3.5.8):
