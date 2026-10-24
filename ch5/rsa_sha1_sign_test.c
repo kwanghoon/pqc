@@ -1,6 +1,12 @@
+/*
+ * rsa_sha1_sign_test.c
+ *
+ * RSA-SHA1 digital signature test: generate a key pair, sign a message,
+ * and verify the signature.
+ */
+
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
 #include <openssl/rsa.h>
 #include <openssl/engine.h>
 #include <openssl/rand.h>
@@ -10,7 +16,7 @@
 #define MAXSIGNSZ 1024
 #define BUFFSZ 1024
 
-void makeSignature (unsigned char *plaintext, int plsize, unsigned char *sign, unsigned int *signSize, RSA *rsaPriv);
+int makeSignature (unsigned char *plaintext, int plsize, unsigned char *sign, unsigned int *signSize, RSA *rsaPriv);
 int signatureVerify(unsigned char plaintext[], int plsize, unsigned char sign[], int signSize, RSA *rsaPub);
 void printStr(unsigned char astr[], int len);
 void printResult(int result);
@@ -28,10 +34,22 @@ int main()
     printf("org text: %s", pt); printStr(pt, plsize);
     RAND_seed (rands, 0); // TODO: seed 바이트 수가 0?
     rsaPriv = RSA_generate_key(512, RSA_F4, NULL, NULL);
-    assert(rsaPriv);
-    rsaPub = RSAPublicKey_dup(rsaPriv); assert(rsaPub);
-    makeSignature(pt, plsize, sign, &ssize, rsaPriv);
+    if (rsaPriv == NULL) {
+        fprintf(stderr, "RSA key generation failed\n");
+        return 1;
+    }
+    rsaPub = RSAPublicKey_dup(rsaPriv);
+    if (rsaPub == NULL) {
+        fprintf(stderr, "RSAPublicKey_dup failed\n");
+        RSA_free(rsaPriv);
+        return 1;
+    }
+    result = makeSignature(pt, plsize, sign, &ssize, rsaPriv);
     RSA_free(rsaPriv);
+    if (result == 0) {
+        RSA_free(rsaPub);
+        return 1;
+    }
     printf("signature: "); printStr(sign, ssize);
     result = signatureVerify(pt, plsize, sign, ssize, rsaPub);
     printResult(result);
@@ -40,7 +58,9 @@ int main()
     // result = signatureVerify(pt, plsize, sign, ssize, rsaPub);
     // printResult(result);
     RSA_free (rsaPub);
-    return(1);
+    if (result != 1)
+        return 1;
+    return 0;
 }
 
 void printStr(unsigned char astr[], int len)
@@ -69,31 +89,56 @@ void printResult(int result)
     }
 }
 
-void makeSignature (unsigned char *plaintext, int plsize, unsigned char *sign, unsigned int *signSize, RSA *rsaPriv)
+int makeSignature (unsigned char *plaintext, int plsize, unsigned char *sign, unsigned int *signSize, RSA *rsaPriv)
 {
     EVP_MD_CTX ctx;
     EVP_PKEY *pkey;
     int result;
     pkey = EVP_PKEY_new();
+    if (pkey == NULL) {
+        fprintf(stderr, "EVP_PKEY_new failed\n");
+        return 0;
+    }
     result = EVP_PKEY_set1_RSA(pkey, rsaPriv);
-
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_PKEY_set1_RSA failed\n");
+        EVP_PKEY_free(pkey);
+        return 0;
+    }
 
     EVP_MD_CTX_init(&ctx);
 
     result = EVP_SignInit_ex(&ctx, EVP_sha1(), NULL);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_SignInit_ex failed\n");
+        goto err;
+    }
 
     result = EVP_SignUpdate(&ctx, plaintext, plsize);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_SignUpdate failed\n");
+        goto err;
+    }
 
     result = EVP_SignFinal(&ctx, sign, signSize, pkey);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_SignFinal failed\n");
+        goto err;
+    }
 
-    assert(*signSize <= MAXSIGNSZ);
+    if (*signSize > MAXSIGNSZ) {
+        fprintf(stderr, "Signature is too large\n");
+        goto err;
+    }
 
     EVP_MD_CTX_cleanup(&ctx);
     EVP_PKEY_free(pkey);
+    return 1;
+
+err:
+    EVP_MD_CTX_cleanup(&ctx);
+    EVP_PKEY_free(pkey);
+    return 0;
 }
 
 int signatureVerify(unsigned char plaintext[], int plsize, unsigned char
@@ -103,19 +148,37 @@ sign[], int signSize, RSA *rsaPub)
     EVP_PKEY *pukey;
     int result;
     pukey = EVP_PKEY_new();
+    if (pukey == NULL) {
+        fprintf(stderr, "EVP_PKEY_new failed\n");
+        return -1;
+    }
 
     result = EVP_PKEY_set1_RSA(pukey, rsaPub);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_PKEY_set1_RSA failed\n");
+        EVP_PKEY_free(pukey);
+        return -1;
+    }
 
     EVP_MD_CTX_init(&ctx);
 
     result = EVP_VerifyInit_ex(&ctx, EVP_sha1(), NULL);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_VerifyInit_ex failed\n");
+        result = -1;
+        goto done;
+    }
 
     result = EVP_VerifyUpdate(&ctx, plaintext, plsize);
-    assert(result);
+    if (result == 0) {
+        fprintf(stderr, "EVP_VerifyUpdate failed\n");
+        result = -1;
+        goto done;
+    }
 
     result = EVP_VerifyFinal(&ctx, sign, signSize, pukey);
+
+done:
     EVP_MD_CTX_cleanup(&ctx);
     EVP_PKEY_free (pukey);
 

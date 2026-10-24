@@ -16,7 +16,9 @@
 |---|---|---|
 | [rsa_sha1_sign_test.c](rsa_sha1_sign_test.c) | [pqc/pqc_mldsa_sign_test.c](pqc/pqc_mldsa_sign_test.c) | RSA-512 + SHA-1 서명 → ML-DSA-65 서명 (별도 해시 선택 없음), `EVP_DigestSign`/`EVP_DigestVerify` 사용 |
 
-실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+두 소스는 `main()` 위치, 함수 순서와 이름, `assert` 대신 `if` 검사, 숫자 종료 코드(`0`/`1`), `makeSignature()`의 `int` 반환(성공 1, 실패 0), `//` 변조 테스트 주석까지 같은 구조다. 달라지는 부분은 키 생성(`generateKey()`), 서명/검증 API, 단일 `EVP_PKEY` 사용, 서명 버퍼 크기(`MAXSIGNSZ` 1024 → 4096)와 `size_t` 서명 길이, `EVP_MD_CTX_new/free`, `RAND_seed()` 삭제로 제한한다. 자세한 대응표와 실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
+원본은 이전에는 항상 1을 반환했으나, 이제 두 프로그램 모두 성공 시 0, 실패 시 1을 반환한다.
 
 ## 2. 현재 취약 암호 사용
 
@@ -31,8 +33,8 @@
 
 ## 3. 전환 목표
 
-- 서명 알고리즘을 ML-DSA 또는 SLH-DSA로 교체
-- 해시 알고리즘을 SHA-256 이상 또는 PQC 서명에 맞는 해시 체계로 변경
+- 서명 알고리즘을 ML-DSA 또는 SLH-DSA로 교체(전환본은 ML-DSA-65)
+- SHA-1 의존 제거(ML-DSA는 메시지를 직접 서명하므로 별도 해시 선택이 없음)
 - 서명 검증 로직을 양자내성 키 집합에 맞게 재설계
 
 ## 4. 5단계 전환 계획
@@ -81,35 +83,31 @@
 - `plaintext` / `sign`: 서명 생성과 검증 대상 메시지와 결과값
 - `plsize` / `signSize`: 메시지 길이와 서명 길이
 
-목표 API 패턴(권장):
-- `EVP_PKEY_CTX *sctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
-  - `EVP_PKEY_ML_DSA`: 양자내성 서명 알고리즘
-- `EVP_PKEY_sign_init(sctx)`
-  - `sctx`: 서명용 컨텍스트
-- `EVP_PKEY_sign(sctx, sig, &siglen, msg, msglen, key)`
-  - `sig`: 서명 결과 버퍼
-  - `&siglen`: 서명 길이
-  - `msg`: 서명 대상 메시지
-  - `msglen`: 메시지 길이
-  - `key`: 개인키
-- `EVP_PKEY_CTX *vctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
-  - 검증용 컨텍스트
-- `EVP_PKEY_verify_init(vctx)`
-  - `vctx`: 검증용 컨텍스트
-- `EVP_PKEY_verify(vctx, sig, siglen, msg, msglen, pkey)`
-  - `pkey`: 공개키
-  - `msg` / `msglen`: 검증 대상 값
-  - `sig` / `siglen`: 서명 값과 길이
-- `EVP_PKEY_CTX_set_security_bits(sctx, 256)`
-  - `256`: 보안 강도 지정
+목표 API 패턴([pqc/pqc_mldsa_sign_test.c](pqc/pqc_mldsa_sign_test.c)의 실제 사용):
+- `EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL)`
+  - `"ML-DSA-65"`: 양자내성 서명 알고리즘과 매개변수 집합
+- `EVP_PKEY_keygen_init(ctx)`, `EVP_PKEY_generate(ctx, &key)`
+  - `key`: 개인키와 공개키를 모두 담은 `EVP_PKEY`
+- `EVP_MD_CTX_new()`
+  - 서명/검증 컨텍스트 생성
+- `EVP_DigestSignInit_ex(ctx, NULL, NULL, NULL, NULL, priv, NULL)`
+  - 다이제스트 인자가 `NULL`: ML-DSA는 해시를 따로 지정하지 않음
+  - `priv`: 서명용 개인키
+- `EVP_DigestSign(ctx, sign, &signSize, plaintext, plsize)`
+  - `sign`: 서명 결과 버퍼
+  - `signSize`: 버퍼 크기를 입력하고 실제 서명 길이를 돌려받는 `size_t` 포인터
+  - `plaintext` / `plsize`: 서명 대상 메시지와 길이
+- `EVP_DigestVerifyInit_ex(ctx, NULL, NULL, NULL, NULL, pub, NULL)`
+  - `pub`: 검증용 공개키
+- `EVP_DigestVerify(ctx, sign, signSize, plaintext, plsize)`
+  - 반환값 1은 성공, 0은 검증 실패, 음수는 오류
 
 목표 매개변수-역할 정리:
-- `EVP_PKEY_ML_DSA`: 서명 알고리즘 선택
-- `sctx` / `vctx`: 서명 및 검증 시간의 컨텍스트
-- `sig` / `siglen`: 서명 값과 길이
-- `msg` / `msglen`: 서명 대상 메시지와 길이
-- `key` / `pkey`: 서명용 개인키와 검증용 공개키
-- `256`: 보안 강도
+- `"ML-DSA-65"`: 서명 알고리즘 선택
+- `ctx`: 서명 및 검증 컨텍스트
+- `sign` / `signSize`: 서명 값과 길이(ML-DSA-65는 3309바이트이므로 `MAXSIGNSZ`를 4096으로 확장)
+- `plaintext` / `plsize`: 서명 대상 메시지와 길이
+- `key`: 서명과 검증에 함께 쓰는 `EVP_PKEY`(원본의 `rsaPriv`/`rsaPub` 분리를 대체)
 
 권장 구성:
 - 서명이 필요한 애플리케이션은 양자내성 서명 알고리즘을 기본으로 사용
@@ -122,6 +120,7 @@
 - 공개키 복사 및 `EVP_PKEY_set1_RSA()`로 설정
 
 전환 후:
+- `generateKey()`로 ML-DSA-65 키 쌍을 하나의 `EVP_PKEY`로 생성(원본처럼 프로그램 안에서 생성하며 파일 입출력은 없음)
 - 양자내성 개인키/공개키 생성
 - PEM/PKCS#8 또는 표준 포맷으로 저장
 - 인증서와 서명 키를 분리하여 관리
@@ -138,7 +137,7 @@
 - `EVP_VerifyInit_ex()`
 
 전환 후:
-- 서명 컨텍스트와 검증 컨텍스트를 양자내성 알고리즘에 맞게 초기화
+- `EVP_MD_CTX_new()`로 컨텍스트를 만들고 `EVP_DigestSignInit_ex()`/`EVP_DigestVerifyInit_ex()`로 초기화(다이제스트는 `NULL`)
 - 서명 키와 공개키를 각각의 컨텍스트에 적재
 
 포인트:
@@ -152,8 +151,7 @@
 - 동일한 평문과 서명을 검증
 
 전환 후:
-- 양자내성 서명 생성과 검증을 같은 라이브러리/엔진에서 수행
-- 메시지 전체 또는 메시지 해시 기반의 서명 체계 유지
+- `EVP_DigestSign()`/`EVP_DigestVerify()`로 메시지 전체를 한 번에 서명하고 검증(`Update`/`Final` 단계 없음)
 
 검증 필요 항목:
 - 메시지 길이 제한
