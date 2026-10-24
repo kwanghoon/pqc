@@ -15,15 +15,15 @@
 
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
-| [hash_sign.c](hash_sign.c) | [pqc/pqc_hash_sign.c](pqc/pqc_hash_sign.c) | RSA + SHA-1 서명 → ML-DSA-65 서명, `EVP_DigestSign`/`EVP_DigestVerify` 사용, 키는 ML-DSA PEM |
+| [hash_sign.c](hash_sign.c) | [pqc/pqc_hash_sign.c](pqc/pqc_hash_sign.c) | RSA + SHA-1 서명 → SHA-512 스트리밍 해시 + ML-DSA-65 서명(HashML-DSA), 키는 ML-DSA PEM |
 
-실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+두 소스는 `main()`, `provideSubdir()`, `fread` 루프 구조, 함수 순서와 이름, `assert` 대신 `if` 검사, 반환값 규칙(성공 1, 실패 0, `main`은 0/1)이 같다. 달라지는 부분은 해시 API(`EVP_sha1` → `EVP_sha512`와 `EVP_DigestInit_ex`/`Update`/`Final_ex`), 키 읽기(`PEM_read_PrivateKey`/`PEM_read_PUBKEY`), `buildHashMsg`/`signHashed`/`verifyHashed` 추가, 서명 버퍼(`SIGNSZ` 1024 → 4096, `size_t`)로 제한한다. 자세한 대응표와 실행 방법은 [pqc/README.md](pqc/README.md), 빌드와 실행은 [README.md](README.md)와 [build.sh](build.sh)를 참고한다.
 
 ## 2. 현재 취약 암호 사용
 
 - 키: RSA 개인키/공개키
 - 해시: `EVP_sha1()`
-- 서명 방법: `EVP_SignInit_ex()`, `EVP_VerifyFinal()`
+- 서명 방법: `EVP_SignInit_ex()`, `EVP_SignUpdate()`, `EVP_SignFinal()`, `EVP_VerifyFinal()`
 - 파일 무결성 저장: `.hash/*.sig` 파일
 
 문제점:
@@ -33,8 +33,9 @@
 
 ## 3. 전환 목표
 
-- 파일 해시와 서명 단계에서 RSA → 양자내성 서명 알고리즘으로 전환
-- SHA-1 의존 제거
+- 파일 해시와 서명 단계에서 RSA → 양자내성 서명 알고리즘(ML-DSA-65)으로 전환
+- SHA-1 의존 제거(SHA-512로 대체)
+- ML-DSA는 스트리밍 서명 API가 없으므로 파일은 SHA-512로 스트리밍 해시하고 그 다이제스트에 서명(HashML-DSA)
 - 서명 파일 저장 구조를 제어하면서, 인증서/서명 키와 무결성 검증 프로세스를 정비
 
 ## 4. 5단계 전환 계획
@@ -82,31 +83,36 @@
 - `buff` / `inLen`: 파일 내용을 담는 버퍼와 그 길이
 - `sign` / `signSize`: 서명 값과 길이
 
-목표 API 패턴(권장):
-- `EVP_PKEY_CTX *sctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA, NULL);`
-  - `EVP_PKEY_ML_DSA`: 양자내성 서명 알고리즘 선택
-- `EVP_PKEY_sign_init(sctx)`
-  - `sctx`: 서명용 컨텍스트
-- `EVP_PKEY_sign(sctx, sig, &siglen, msg, msglen, key)`
-  - `sig`: 서명 값 저장 버퍼
-  - `&siglen`: 서명 길이
-  - `msg`: 파일 해시 또는 원문
-  - `msglen`: 입력 길이
-  - `key`: 개인키
-- `EVP_PKEY_verify_init(vctx)`
-  - `vctx`: 검증용 컨텍스트
-- `EVP_PKEY_verify(vctx, sig, siglen, msg, msglen, pkey)`
-  - `pkey`: 검증용 공개키
-- `EVP_PKEY_CTX_set_security_bits(sctx, 256)`
-  - `256`: 보안 강도
+목표 API 패턴([pqc/pqc_hash_sign.c](pqc/pqc_hash_sign.c)의 실제 사용):
+- `pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);` / `pkey = PEM_read_PUBKEY(fp, NULL, NULL, NULL);`
+  - `EVP_PKEY`를 직접 읽으므로 `RSA *`와 `EVP_PKEY_set1_RSA`가 필요 없다.
+  - `EVP_PKEY_is_a(pkey, "ML-DSA-65")`로 키 종류를 확인한다.
+- `ctx = EVP_MD_CTX_new();`
+- `EVP_DigestInit_ex(ctx, EVP_sha512(), NULL)`
+  - `EVP_sha512()`: 파일 해시 함수
+- `EVP_DigestUpdate(ctx, buff, inLen)`
+  - `fread` 루프 안에서 호출하는 스트리밍 해시
+- `EVP_DigestFinal_ex(ctx, hash, &hashSize)`
+  - `hash`: 64바이트 다이제스트
+- `EVP_DigestSignInit_ex(sctx, NULL, NULL, NULL, NULL, pkey, params)`
+  - 다이제스트 인자가 `NULL`이고 `params`에 `message-encoding` = 0을 지정
+- `EVP_DigestSign(sctx, sign, &signSize, msg, msgLen)`
+  - `msg`: HashML-DSA 메시지 M' (`0x01 || 0x00 || OID(SHA-512) || hash`, 77바이트)
+  - `sign` / `signSize`: 서명 버퍼와 `size_t` 길이(3309바이트)
+- `EVP_DigestVerifyInit_ex(...)`, `EVP_DigestVerify(vctx, sign, signSize, msg, msgLen)`
+  - 반환값 1은 성공, 0은 검증 실패, 음수는 오류
 
 목표 매개변수-역할 정리:
-- `EVP_PKEY_ML_DSA`: 서명 알고리즘 선택
-- `sctx` / `vctx`: 서명/검증용 컨텍스트
-- `sig` / `siglen`: 서명 결과와 길이
-- `msg` / `msglen`: 검증 대상 메시지와 길이
-- `key` / `pkey`: 개인키와 공개키
-- `256`: 보안 강도 값
+- `pkey`: ML-DSA-65 개인키 또는 공개키
+- `hash` / `hashSize`: 파일의 SHA-512 다이제스트
+- `msg` / `msgLen`: 서명 대상 M'
+- `sign` / `signSize`: 서명 값과 길이
+
+HashML-DSA 관련 사항:
+- OpenSSL 3.5.8과 현재 master 문서는 Pre-hash ML-DSA를 지원하지 않는다고 명시한다. 문서가 안내하는 대로 M'를 외부에서 구성하고 `message-encoding` = 0으로 서명한다.
+- `EVP_DigestSignUpdate`/`EVP_DigestSignFinal`과 `EVP_PKEY_sign_message_update`는 ML-DSA에서 지원되지 않아 호출이 실패한다.
+- 서명은 파일 자체가 아니라 SHA-512 다이제스트를 담은 M'에 대한 것이다. 다른 HashML-DSA 구현과의 상호 운용은 검증하지 못했다.
+- OpenSSL FIPS provider에서는 `message-encoding` = 0이면 FIPS 승인 표시가 0이 된다.
 
 권장 사항:
 - 해당 애플리케이션이 자료 무결성을 검증하는 용도라면 서명 알고리즘을 기본 PQC로 전환한다.
@@ -117,6 +123,10 @@
 현재:
 - 개인키/공개키 파일을 읽어 `PEM_read_RSAPrivateKey()`, `PEM_read_RSAPublicKey()`로 로딩
 - `EVP_PKEY_set1_RSA()`로 키 설정
+
+전환본:
+- ML-DSA 키는 프로그램 밖에서 `openssl genpkey -algorithm ML-DSA-65`로 준비하고, 프로그램은 PEM 파일을 읽기만 한다.
+- `PEM_read_PrivateKey()`와 `PEM_read_PUBKEY()`로 `EVP_PKEY`를 바로 얻는다.
 
 전환 후:
 - 양자내성 개인키/공개키를 안전하게 생성 및 저장
@@ -135,9 +145,8 @@
 - 검증 시 동일 방식으로 초기화
 
 전환 후:
-- 양자내성 서명/검증용 초기화 단계 구성
-- 해시와 서명/검증 루틴의 연결을 명시적으로 정의
-- 파일 전체 검증과 서명 검증이 같은 알고리즘 컨텍스트를 공유하도록 설계
+- `EVP_DigestInit_ex(ctx, EVP_sha512(), NULL)`로 해시 컨텍스트를 초기화
+- 서명/검증 컨텍스트는 `signHashed()`/`verifyHashed()` 안에서 `EVP_DigestSignInit_ex`/`EVP_DigestVerifyInit_ex`(다이제스트 `NULL`)로 초기화
 
 설계 원칙:
 - 파일 크기와 서명 크기 제한을 명시적으로 관리
@@ -151,8 +160,8 @@
 - 검증 시 파일을 다시 읽어 서명과 비교
 
 전환 후:
-- 해시 계산 단계는 PQC 서명에 적합한 표준 해시 체계로 교체
-- 서명 생성/검증은 양자내성 알고리즘으로 수행
+- 해시 계산 단계는 SHA-512로 교체하며 `fread` 루프는 그대로 두고 `EVP_DigestUpdate`로 처리
+- 다이제스트로 M'를 구성(`buildHashMsg`)하고 ML-DSA-65로 서명/검증을 한 번 수행
 - 서명 파일에 알고리즘 ID와 키 ID를 포함해 검증 시 사전 검증 가능하게 함
 
 중요 포인트:
@@ -164,6 +173,7 @@
 현재:
 - `.hash` 디렉터리 하위에 서명 파일 생성
 - 검증 결과를 stdout에 출력
+- 전환본도 같은 구조이며 서명 파일 크기만 3309바이트로 늘어난다.
 
 전환 후:
 - 결과 파일에 서명 체계와 키 버전 정보 포함
@@ -176,8 +186,8 @@
 
 ## 5. 적용 우선순위
 
-1. 서명 알고리즘을 RSA 기반에서 PQC 서명 기반으로 전환
-2. SHA-1 의존 제거
+1. 서명 알고리즘을 RSA 기반에서 PQC 서명 기반(ML-DSA-65)으로 전환
+2. SHA-1 의존 제거(SHA-512 스트리밍 해시)
 3. 서명 파일 저장 구조와 메타데이터 관리 개선
 4. 검증 실패 로깅과 운영 절차 정비
 
