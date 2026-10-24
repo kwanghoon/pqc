@@ -1,6 +1,7 @@
 CC = gcc
 OPENSSL358 ?= $(HOME)/pqc/openssl-3.5.8/install
 OPENSSL_LIBDIR ?= $(if $(wildcard $(OPENSSL358)/lib64),$(OPENSSL358)/lib64,$(OPENSSL358)/lib)
+OPENSSL_CLI ?= $(OPENSSL358)/bin/openssl
 INPUT ?= ../foo.txt
 FILE_PRIVATE ?= mlkem-file-test-priv.pem
 FILE_PUBLIC ?= mlkem-file-test-pub.pem
@@ -23,6 +24,10 @@ run: pqc_mlkem_file pqc_mlkem_envelope
 	@printf './pqc_mlkem_file "%s" "%s" "%s" "%s" "%s"\n' "$(FILE_PRIVATE)" "$(FILE_PUBLIC)" "$(INPUT)" "$(FILE_ENVELOPE)" "$(FILE_OUTPUT)"
 	@LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./pqc_mlkem_file "$(FILE_PRIVATE)" "$(FILE_PUBLIC)" "$(INPUT)" "$(FILE_ENVELOPE)" "$(FILE_OUTPUT)"
 	@cmp "$(INPUT)" "$(FILE_OUTPUT)"
+	@printf 'umask 077; openssl genpkey -algorithm ML-KEM-768 -out "%s"\n' "$(ENVELOPE_PRIVATE)"
+	@umask 077; LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" "$(OPENSSL_CLI)" genpkey -algorithm ML-KEM-768 -out "$(ENVELOPE_PRIVATE)"
+	@printf 'openssl pkey -in "%s" -pubout -out "%s"\n' "$(ENVELOPE_PRIVATE)" "$(ENVELOPE_PUBLIC)"
+	@LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" "$(OPENSSL_CLI)" pkey -in "$(ENVELOPE_PRIVATE)" -pubout -out "$(ENVELOPE_PUBLIC)"
 	@printf './pqc_mlkem_envelope "%s" "%s" "%s" "%s" "%s"\n' "$(ENVELOPE_PUBLIC)" "$(ENVELOPE_PRIVATE)" "$(INPUT)" "$(ENVELOPE_CIPHER)" "$(ENVELOPE_OUTPUT)"
 	@LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./pqc_mlkem_envelope "$(ENVELOPE_PUBLIC)" "$(ENVELOPE_PRIVATE)" "$(INPUT)" "$(ENVELOPE_CIPHER)" "$(ENVELOPE_OUTPUT)"
 	@cmp "$(INPUT)" "$(ENVELOPE_OUTPUT)"

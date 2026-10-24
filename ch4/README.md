@@ -67,6 +67,20 @@ pqc_mlkem_file <private key file> <public key file> <input file> <envelope file>
 
 ## 전자 봉투 예제
 
-[rsa_des_crc.c](rsa_des_crc.c)는 RSA와 3DES를 사용하는 별도 예제이며,
-대응하는 ML-KEM 전자 봉투 예제는 [pqc/README.md](pqc/README.md)에서
-설명합니다.
+[rsa_des_crc.c](rsa_des_crc.c)는 RSA로 3DES 세션 키를 보호하는 전자 봉투
+예제입니다. `main()`은 공개키 PEM 읽기 → 개인키 PEM 읽기 → 봉투 생성
+(`makeEnvelope`) → 봉투 열기 (`openEnvelope`) 순서로 처리합니다.
+
+```text
+rsa_des_crc <public key file> <private key file> <input file> <envelope file> <output file>
+```
+
+두 키 파일은 미리 준비해야 합니다. 프로그램은 키 파일이 없을 때 새 키를
+생성하지 않습니다. 공개키는 PKCS#1 `RSA PUBLIC KEY` PEM, 개인키는 RSA
+개인키 PEM 형식으로 읽습니다. 인자 수나 키 파일, 암호 연산에 문제가 있으면
+실패 상태로 종료합니다. 3DES-CBC는 인증 기능을 제공하지 않습니다.
+
+대응하는 [pqc/pqc_mlkem_envelope.c](pqc/pqc_mlkem_envelope.c)는 같은 인자
+순서와 처리 단계를 사용하지만 ML-KEM-768과 AES-256-GCM으로 전환합니다.
+이 프로그램도 전달된 키 파일만 읽으며 키를 생성하지 않습니다. 봉투 형식과
+비교 기준은 [README_PQC.md](README_PQC.md)를 참고하세요.

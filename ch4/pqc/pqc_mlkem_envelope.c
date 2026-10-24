@@ -6,8 +6,7 @@
  * Usage:
  *   pqc_mlkem_envelope <pub.pem> <priv.pem> <plain> <envelope> <decrypted>
  *
- * If <pub.pem> or <priv.pem> does not exist, a new ML-KEM-768 key pair is
- * generated and written to both files.
+ * The public and private key files must already exist.
  *
  * Envelope format:
  *   magic "PQE1"            4 bytes
@@ -21,19 +20,13 @@
  * additional authenticated data.
  */
 
-#include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
 
-#define KEM_NAME "ML-KEM-768"
 #define KEM_CT_MAX 2048
 #define KEY_LEN 32
 #define NONCE_LEN 12
@@ -44,98 +37,49 @@
 
 static const unsigned char MAGIC[MAGIC_LEN] = {'P', 'Q', 'E', '1'};
 
-static int fail_ssl(const char *what)
+EVP_PKEY *read_public_key(const char *path);
+EVP_PKEY *read_private_key(const char *path);
+int make_envelope(EVP_PKEY *pub, const char *plain_path,
+                  const char *envelope_path);
+int open_envelope(EVP_PKEY *priv, const char *envelope_path,
+                 const char *plain_path);
+
+int fail_ssl(const char *what);
+int write_all(FILE *fp, const unsigned char *buf, size_t len);
+
+int main(int argc, char *argv[])
 {
-    fprintf(stderr, "%s failed\n", what);
-    ERR_print_errors_fp(stderr);
-    return 0;
-}
+    EVP_PKEY *pub = NULL, *priv = NULL;
+    int result = 1;
+    int operation_result;
 
-static int write_all(FILE *fp, const unsigned char *buf, size_t len)
-{
-    if (len > 0 && fwrite(buf, 1, len, fp) != len) {
-        perror("fwrite");
-        return 0;
+    if (argc != 6) {
+        fprintf(stderr,
+                "usage: %s <pub.pem> <priv.pem> <plain> <envelope> <decrypted>\n",
+                argv[0]);
+        return 1;
     }
-    return 1;
-}
-
-static int file_exists(const char *path)
-{
-    return access(path, F_OK) == 0;
-}
-
-static FILE *open_private_file(const char *path)
-{
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    FILE *fp;
-
-    if (fd < 0) {
-        perror(path);
-        return NULL;
-    }
-    fp = fdopen(fd, "wb");
-    if (fp == NULL) {
-        perror(path);
-        close(fd);
-    }
-    return fp;
-}
-
-static int generate_key_files(const char *pub_path, const char *priv_path)
-{
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, KEM_NAME, NULL);
-    EVP_PKEY *key = NULL;
-    FILE *fp;
-    int ok = 0;
-
-    if (ctx == NULL)
-        return fail_ssl("EVP_PKEY_CTX_new_from_name");
-    if (EVP_PKEY_keygen_init(ctx) <= 0) {
-        fail_ssl("EVP_PKEY_keygen_init");
+    pub = read_public_key(argv[1]);
+    if (pub == NULL)
         goto done;
-    }
-    if (EVP_PKEY_generate(ctx, &key) <= 0) {
-        fail_ssl("EVP_PKEY_generate");
+    priv = read_private_key(argv[2]);
+    if (priv == NULL)
         goto done;
-    }
-
-    fp = fopen(pub_path, "wb");
-    if (fp == NULL) {
-        perror(pub_path);
+    operation_result = make_envelope(pub, argv[3], argv[4]);
+    if (operation_result == 0)
         goto done;
-    }
-    if (PEM_write_PUBKEY(fp, key) != 1) {
-        fail_ssl("PEM_write_PUBKEY");
-        fclose(fp);
+    operation_result = open_envelope(priv, argv[4], argv[5]);
+    if (operation_result == 0)
         goto done;
-    }
-    if (fclose(fp) != 0) {
-        perror(pub_path);
-        goto done;
-    }
-
-    fp = open_private_file(priv_path);
-    if (fp == NULL)
-        goto done;
-    if (PEM_write_PrivateKey(fp, key, NULL, NULL, 0, NULL, NULL) != 1) {
-        fail_ssl("PEM_write_PrivateKey");
-        fclose(fp);
-        goto done;
-    }
-    if (fclose(fp) != 0) {
-        perror(priv_path);
-        goto done;
-    }
-    ok = 1;
+    result = 0;
 
 done:
-    EVP_PKEY_free(key);
-    EVP_PKEY_CTX_free(ctx);
-    return ok;
+    EVP_PKEY_free(pub);
+    EVP_PKEY_free(priv);
+    return result;
 }
 
-static EVP_PKEY *read_public_key(const char *path)
+EVP_PKEY *read_public_key(const char *path)
 {
     FILE *fp = fopen(path, "rb");
     EVP_PKEY *key;
@@ -151,7 +95,7 @@ static EVP_PKEY *read_public_key(const char *path)
     return key;
 }
 
-static EVP_PKEY *read_private_key(const char *path)
+EVP_PKEY *read_private_key(const char *path)
 {
     FILE *fp = fopen(path, "rb");
     EVP_PKEY *key;
@@ -167,8 +111,8 @@ static EVP_PKEY *read_private_key(const char *path)
     return key;
 }
 
-static int make_envelope(EVP_PKEY *pub, const char *plain_path,
-                         const char *envelope_path)
+int make_envelope(EVP_PKEY *pub, const char *plain_path,
+                  const char *envelope_path)
 {
     EVP_PKEY_CTX *kem = NULL;
     EVP_CIPHER_CTX *cipher = NULL;
@@ -284,8 +228,8 @@ done:
     return ok;
 }
 
-static int open_envelope(EVP_PKEY *priv, const char *envelope_path,
-                         const char *plain_path)
+int open_envelope(EVP_PKEY *priv, const char *envelope_path,
+                  const char *plain_path)
 {
     EVP_PKEY_CTX *kem = NULL;
     EVP_CIPHER_CTX *cipher = NULL;
@@ -422,34 +366,18 @@ done:
     return ok;
 }
 
-int main(int argc, char *argv[])
+int fail_ssl(const char *what)
 {
-    EVP_PKEY *pub = NULL, *priv = NULL;
-    int rc = EXIT_FAILURE;
+    fprintf(stderr, "%s failed\n", what);
+    ERR_print_errors_fp(stderr);
+    return 0;
+}
 
-    if (argc != 6) {
-        fprintf(stderr,
-                "usage: %s <pub.pem> <priv.pem> <plain> <envelope> <decrypted>\n",
-                argv[0]);
-        return EXIT_FAILURE;
+int write_all(FILE *fp, const unsigned char *buf, size_t len)
+{
+    if (len > 0 && fwrite(buf, 1, len, fp) != len) {
+        perror("fwrite");
+        return 0;
     }
-
-    if (!file_exists(argv[1]) || !file_exists(argv[2])) {
-        if (!generate_key_files(argv[1], argv[2]))
-            return EXIT_FAILURE;
-    }
-    pub = read_public_key(argv[1]);
-    priv = read_private_key(argv[2]);
-    if (pub == NULL || priv == NULL)
-        goto done;
-    if (!make_envelope(pub, argv[3], argv[4]))
-        goto done;
-    if (!open_envelope(priv, argv[4], argv[5]))
-        goto done;
-    rc = EXIT_SUCCESS;
-
-done:
-    EVP_PKEY_free(pub);
-    EVP_PKEY_free(priv);
-    return rc;
+    return 1;
 }

@@ -30,7 +30,8 @@ pqc_mlkem_file <private key file> <public key file> <input file> <envelope file>
 ## 빌드 및 실행
 
 이 디렉터리의 Makefile은 OpenSSL 3.5.8로 ML-KEM 파일 암호화 예제와 ML-KEM
-전자 봉투 예제를 빌드하고 실행합니다. 기본 OpenSSL 설치 경로는
+전자 봉투 예제를 빌드하고 실행합니다. 테스트 실행 전에 OpenSSL CLI로 ML-KEM
+키 쌍을 별도로 준비한 뒤 전자 봉투 프로그램에 전달합니다. 기본 OpenSSL 설치 경로는
 `$(HOME)/pqc/openssl-3.5.8/install`이며 `OPENSSL358`로 변경할 수 있습니다.
 
 ```sh
@@ -45,5 +46,29 @@ make OPENSSL358=/path/to/openssl-3.5.8/install
 
 [pqc_mlkem_envelope.c](pqc_mlkem_envelope.c)는 [../rsa_des_crc.c](../rsa_des_crc.c)의
 RSA + 3DES 전자 봉투를 ML-KEM-768 + AES-256-GCM으로 대체한 별도 예제입니다.
-키 파일이 없으면 키 쌍을 생성하며, 저장된 키 파일을 이후 실행에서 읽어
-재사용할 수 있습니다. `pqc_mlkem_file.c`와 키 파일 사용 방식이 다릅니다.
+두 프로그램의 `main()`은 공개키 읽기 → 개인키 읽기 → 봉투 생성 →
+봉투 열기 순서로 처리합니다. `pqc_mlkem_envelope.c`는 전달된 공개키와
+개인키 PEM 파일을 읽기만 합니다. 파일이 없거나 유효하지 않으면 오류로
+종료하며, 프로그램 안에서 키를 생성하거나 저장하지 않습니다.
+
+인자 순서는 RSA 원본과 같습니다.
+
+```text
+pqc_mlkem_envelope <public key file> <private key file> <input file> <envelope file> <output file>
+```
+
+Makefile은 실행 전에 OpenSSL CLI로 테스트용 키 쌍을 준비합니다. 개인키는
+`umask 077` 아래에서 생성합니다.
+
+```sh
+umask 077
+openssl genpkey -algorithm ML-KEM-768 -out mlkem-envelope-test-priv.pem
+openssl pkey -in mlkem-envelope-test-priv.pem -pubout \
+    -out mlkem-envelope-test-pub.pem
+```
+
+Makefile은 키 준비 후 `pqc_mlkem_envelope`를 실행하고 복호화 결과와 입력을
+`cmp`로 비교합니다. RSA 원본은 RSA-OAEP로 세션 키를 보호하고 3DES-CBC로
+데이터를 암호화하지만, 전환본은 ML-KEM 캡슐화와 AES-256-GCM을 사용합니다.
+GCM은 헤더와 데이터의 무결성을 인증합니다. 봉투 구조와 RSA 원본과의 비교는
+[../README_PQC.md](../README_PQC.md)를 참고하세요.
