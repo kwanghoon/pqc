@@ -16,11 +16,12 @@
 
 #define MAXBUFF 1024
 
-void getTimeSubstr(unsigned char *buff);
 RSA *readRSAPubKeyFile(char *pubKeyFn);
 RSA *readRSAPrivKeyFile(char *privKeyFn);
 int makeEnvelope(RSA *rsaPub, char *pfn, char *cfn);
 int openEnvelope(RSA *rsaPriv, char *cfn, char *dfn);
+
+void getTimeSubstr(unsigned char *buff);
 
 int main(int argc, char *argv[])
 {
