@@ -15,9 +15,18 @@
 | 원본 | 전환본 | 변경 내용 |
 |---|---|---|
 | [client0.c](client0.c) | [pqc/pqc_client0.c](pqc/pqc_client0.c) | DES-CBC → AES-256-GCM, 32바이트 키, 랜덤 nonce, 태그 전송 |
-| [server0.c](server0.c) | [pqc/pqc_server0.c](pqc/pqc_server0.c) | GCM 태그 검증 후 타임스탬프 확인, 부분 수신 처리 |
+| [server0.c](server0.c) | [pqc/pqc_server0.c](pqc/pqc_server0.c) | GCM 태그 검증 후 타임스탬프 확인 (`multiple8` 불필요) |
 
-실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+두 쌍은 알고리즘 전환에 필요한 부분만 다르다. 원본의 결함 중 다음은 `client0.c`, `server0.c`, `pqc_client0.c`, `pqc_server0.c` 모두 동일하게 수정했다.
+
+- `strcpy`/`strcmp`에 `(char *)` 캐스트 추가
+- 서버가 `cipherBSz`를 검증하지 않던 문제: 기대 크기와 다르면 연결을 닫음(원본은 `multiple8(sizeof(struct timeval))`, 전환본은 `NONCESZ + sizeof(struct timeval) + TAGSZ`)
+- 서버에 `SO_REUSEADDR` 추가
+- `abs()` → `labs()`
+
+또한 `assert`를 `if` 검사로, `exit(EXIT_FAILURE)`를 `return 1`로 바꾸고 `main`을 앞에 두었다. 차이점과 실행 방법은 [pqc/README.md](pqc/README.md)를 참고한다.
+
+> 이 장의 구현은 사전 공유 키 구조를 유지하고 대칭 암호만 교체한다. 아래 3~5절의 KEM 기반 설계는 키 합의까지 포함하는 확장 계획이며 `pqc_client0.c`/`pqc_server0.c`에는 구현되어 있지 않다.
 
 ## 2. 현재 취약 암호 사용
 
@@ -145,7 +154,7 @@
 
 현재:
 - 타임스탬프를 암호문으로 변환해 전송
-- 서버가 복호화 후 `abs(myTime.tv_sec - timeStamp.tv_sec) < TIMESKEW` 규칙으로 인증을 판정
+- 서버가 복호화 후 `labs(myTime.tv_sec - timeStamp.tv_sec) < TIMESKEW` 규칙으로 인증을 판정
 
 전환 후:
 - 클라이언트는 세션 키를 사용해 메시지에 대한 인증 태그 생성
@@ -180,3 +189,20 @@
 ## 6. 요약
 
 이 장은 소켓 기반의 간단한 보안 프로토콜 예제이지만, 양자내성 전환을 가장 실질적으로 적용해야 하는 장 중 하나다. 이유는 보안의 근간이 “공유 secret key + 단순 시간 비교” 구조이기 때문이다. PQC 전환에서는 이 구조 자체를 KEM 기반 세션키 교환 + 검증 가능한 메시지 인증으로 바꾸는 것이 핵심이다.
+
+## 7. 빌드 및 테스트 스크립트
+
+[build.sh](build.sh)는 원본과 전환본의 빌드와 테스트를 한 번에 실행한다.
+
+```bash
+./build.sh
+```
+
+```sh
+cd ch8
+make OPENSSL102=...          # client0/server0 (OpenSSL 1.0.2u): connected. / authentication fails. 확인
+cd pqc
+make OPENSSL358=...          # pqc_client0/pqc_server0 (OpenSSL 3.5.8): 동일 확인
+```
+
+각 `make`는 서버를 백그라운드로 띄워 올바른 키와 다른 키로 클라이언트를 한 번씩 실행하고 서버를 종료한다.

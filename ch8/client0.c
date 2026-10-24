@@ -1,3 +1,14 @@
+/*
+ * client0.c
+ *
+ * Encrypts the current time stamp with a pre-shared DES key (symmKey.sec)
+ * and sends it to the server (127.0.0.1:9999).
+ * The server answers "yes" if the decrypted time stamp is close to its own
+ * time, otherwise "no".
+ *
+ * Message: int cipherBSz, then cipherBSz bytes of DES-CBC ciphertext.
+ */
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -9,21 +20,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <openssl/des.h>
 
 #define BUFFSZ 1024
 #define SOCKSZ sizeof(struct sockaddr_in)
 #define ACKSZ 5
 
-int multiple8(int size)
-{
-    if(size % 8 == 0) return (size); 
-    return( (size/ 8 + 1 ) * 8);
-}
+int multiple8(int size);
 
-
-int main(void)
+int main()
 {
     int res;
     int sockfd;
@@ -38,8 +43,16 @@ int main(void)
 
     bzero(buff, BUFFSZ);
     gettimeofday(&timeStamp, NULL);
-    fd = open("symmKey.sec", O_RDONLY); assert(fd != -1 ) ;
-    res = read(fd, rawkey, 8); assert (res == 8) ;
+    fd = open("symmKey.sec", O_RDONLY);
+    if(fd == -1){
+        perror("symmKey.sec");
+        return 1;
+    }
+    res = read(fd, rawkey, 8);
+    if(res != 8){
+        fprintf(stderr, "symmKey.sec must contain 8 bytes.\n");
+        return 1;
+    }
     close(fd);
     DES_set_key(&rawkey, &keySched);
 
@@ -56,18 +69,28 @@ int main(void)
     sockfd = socket (AF_INET, SOCK_STREAM, 0);
     if(sockfd == -1){
         perror("socket");
-        exit(EXIT_FAILURE);
+        return 1;
     }
     res = connect(sockfd, (struct sockaddr *)&server,
-    SOCKSZ); assert(res==0);
+    SOCKSZ);
+    if(res != 0){
+        perror("connect");
+        return 1;
+    }
 
     send(sockfd, &cipherBSz, sizeof(int), 0);
     send(sockfd, &buff, cipherBSz, 0);
     recv(sockfd, &buff, 5, 0);
 
-    if(strcmp(buff, "yes")==0)
+    if(strcmp((char *)buff, "yes")==0)
         printf("connected.\n" );
     else
         printf("authentication fails.\n");
     return(0);
+}
+
+int multiple8(int size)
+{
+    if(size % 8 == 0) return (size); 
+    return( (size/ 8 + 1 ) * 8);
 }

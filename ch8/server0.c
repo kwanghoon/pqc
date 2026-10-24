@@ -1,3 +1,15 @@
+/*
+ * server0.c
+ *
+ * Listens on port 9999. For each connection it receives a DES-CBC encrypted
+ * time stamp, decrypts it with the pre-shared key (symmKey.sec) and answers
+ * "yes" if the time stamp is within TIMESKEW seconds of its own time,
+ * otherwise "no".
+ *
+ * Message: int cipherBSz, then cipherBSz bytes of DES-CBC ciphertext.
+ * A message whose cipherBSz differs from the expected size is dropped.
+ */
+
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -7,7 +19,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <openssl/des.h>
@@ -18,7 +29,9 @@
 #define TIMESKEW 2
 #define ACKSZ 5
 
-int main(void)
+int multiple8(int size);
+
+int main()
 {
     int res;
     int sockfd_li, sockfd;
@@ -30,6 +43,7 @@ int main(void)
     DES_cblock iv;
     int cipherBSz;
     int fd;
+    int on = 1;
 
     memset(&server, 0, sizeof(struct sockaddr_in));
     server.sin_port = htons(9999); // cf. 9999
@@ -38,35 +52,54 @@ int main(void)
     sockfd_li = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd_li == -1) {
         perror("socket");
-        exit(EXIT_FAILURE);
+        return 1;
     } 
+    setsockopt(sockfd_li, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     res = bind(sockfd_li, (struct sockaddr *)&server, SOCKSZ);
     if (res == -1) {
         perror("bind");
-        exit(EXIT_FAILURE);
+        return 1;
     } 
-    res = listen(sockfd_li, 5); assert (res == 0) ;
+    res = listen(sockfd_li, 5);
+    if (res != 0) {
+        perror("listen");
+        return 1;
+    }
     while(1) {
         sockfd = accept(sockfd_li, NULL, NULL);
-        assert(sockfd >= 0);
+        if (sockfd < 0) {
+            perror("accept");
+            return 1;
+        }
         res = recv(sockfd, &cipherBSz, sizeof(int), 0);
         res = recv(sockfd, &buff, BUFFSZ, 0); // cf. cipherBSz
-        assert(res == cipherBSz);
+        if (cipherBSz != multiple8(sizeof(struct timeval)) || res != cipherBSz) {
+            close(sockfd);
+            continue;
+        }
 
         gettimeofday(&myTime, NULL);
-        fd = open("symmKey.sec", O_RDONLY); assert(fd != - 1 ) ; 
-        res = read(fd, rawkey, 8); assert(res == 8);
+        fd = open("symmKey.sec", O_RDONLY);
+        if (fd == -1) {
+            perror("symmKey.sec");
+            return 1;
+        }
+        res = read(fd, rawkey, 8);
+        if (res != 8) {
+            fprintf(stderr, "symmKey.sec must contain 8 bytes.\n");
+            return 1;
+        }
         close(fd);
 
         DES_set_key(&rawkey, &keySched);
 
         bzero(iv, sizeof(DES_cblock));
         DES_ncbc_encrypt (buff, (unsigned char *)&timeStamp, cipherBSz, &keySched, &iv, DES_DECRYPT);
-        if (abs (myTime.tv_sec-timeStamp.tv_sec) < TIMESKEW) {
-            strcpy(buff, "yes");
+        if (labs (myTime.tv_sec-timeStamp.tv_sec) < TIMESKEW) {
+            strcpy((char *)buff, "yes");
             send(sockfd, &buff, 5, 0);
         } else {
-            strcpy(buff, "no");
+            strcpy((char *)buff, "no");
             send(sockfd, &buff, 5, 0);
         }
 
@@ -74,3 +107,8 @@ int main(void)
     }   
 }
 
+int multiple8(int size)
+{
+    if(size % 8 == 0) return (size); 
+    return( (size/ 8 + 1 ) * 8);
+}
