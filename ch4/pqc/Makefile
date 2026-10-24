@@ -22,8 +22,10 @@ all: run
 run: pqc_mlkem_file pqc_mlkem_envelope
 	@printf './pqc_mlkem_file "%s" "%s" "%s" "%s" "%s"\n' "$(FILE_PRIVATE)" "$(FILE_PUBLIC)" "$(INPUT)" "$(FILE_ENVELOPE)" "$(FILE_OUTPUT)"
 	@LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./pqc_mlkem_file "$(FILE_PRIVATE)" "$(FILE_PUBLIC)" "$(INPUT)" "$(FILE_ENVELOPE)" "$(FILE_OUTPUT)"
+	@cmp "$(INPUT)" "$(FILE_OUTPUT)"
 	@printf './pqc_mlkem_envelope "%s" "%s" "%s" "%s" "%s"\n' "$(ENVELOPE_PUBLIC)" "$(ENVELOPE_PRIVATE)" "$(INPUT)" "$(ENVELOPE_CIPHER)" "$(ENVELOPE_OUTPUT)"
 	@LD_LIBRARY_PATH="$(OPENSSL_LIBDIR)$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}" ./pqc_mlkem_envelope "$(ENVELOPE_PUBLIC)" "$(ENVELOPE_PRIVATE)" "$(INPUT)" "$(ENVELOPE_CIPHER)" "$(ENVELOPE_OUTPUT)"
+	@cmp "$(INPUT)" "$(ENVELOPE_OUTPUT)"
 
 pqc_mlkem_file: pqc_mlkem_file.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
