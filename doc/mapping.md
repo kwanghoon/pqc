@@ -159,23 +159,23 @@
 
 | 항목 | 내용 |
 |---|---|
-| API 호출 순서 | `SSL_library_init()` → `SSL_load_error_strings()` → `SSLv23_client_method()` → `SSL_CTX_new(meth)` → `SSL_CTX_load_verify_locations(...)` → `SSL_CTX_set_verify(...)` → `BIO_new_ssl_connect(ctx)` → `BIO_get_ssl(...)` → `SSL_set_mode(...)` → `X509_VERIFY_PARAM_set1_host(...)` → `BIO_set_conn_hostname(...)` → `BIO_do_connect(...)` → `BIO_do_handshake(...)` → `SSL_get_server_tmp_key(...)` → `SSL_get_version(...)` → `SSL_get_cipher_name(...)` → `BIO_puts(...)` → `BIO_read(...)` → `BIO_write(...)` |
-| 리턴값 변수 | `meth`, `ctx`, `sbio`, `ssl`, `tmpkey`, `ver`, `name` |
-| 다음 함수에서 사용되는 변수 | `ctx`는 `BIO_new_ssl_connect(ctx)`의 입력. `ssl`은 `SSL_set_mode(ssl, ...)`, `SSL_get_server_tmp_key(ssl, &tmpkey)`, `SSL_get_version(ssl)`의 입력. `sbio`는 핸드셰이크와 I/O API에 사용됨. |
-| 전환본 호출 순서 | `TLS_client_method()` → `SSL_CTX_new(meth)` → `SSL_CTX_set_min_proto_version(...)` → `SSL_CTX_set_max_proto_version(...)` → `SSL_CTX_set1_groups_list(...)` → `SSL_CTX_set1_sigalgs_list(...)` → `SSL_CTX_load_verify_locations(...)` → `BIO_new_ssl_connect(ctx)` → `BIO_get_ssl(...)` → `SSL_set_mode(...)` → `X509_VERIFY_PARAM_set1_host(...)` → `BIO_do_connect(...)` → `BIO_do_handshake(...)` → `SSL_get0_group_name(ssl)` → `SSL_get_cipher_name(ssl)` |
-| 전환본 리턴값 변수 | `meth`, `ctx`, `sbio`, `ssl` |
-| 전환본 use-def | `ctx`는 그룹/시그널 알고리즘 설정과 연결 단계의 입력으로 사용됨. `ssl`은 최종 TLS 1.3 파라미터 확인에 사용됨. |
+| API 호출 순서 | `DES_set_key(&rawkey, &keySched)` → `DES_ncbc_encrypt((unsigned char *)&timeStamp, buff, sizeof(struct timeval), &keySched, (DES_cblock *)iv, DES_ENCRYPT)` |
+| 리턴값 변수 | 없음 (`DES_set_key`과 `DES_ncbc_encrypt`는 `void` 반환) |
+| 다음 함수에서 사용되는 변수 | `rawkey`는 `DES_set_key(&rawkey, &keySched)`의 입력이고, `keySched`와 `iv`는 `DES_ncbc_encrypt(...)`의 입력으로 사용됨. |
+| 전환본 호출 순서 | `RAND_bytes(buff, NONCESZ)` → `EVP_CIPHER_CTX_new()` → `EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, buff)` → `EVP_EncryptUpdate(ctx, buff + NONCESZ, &outLen, (unsigned char *)&timeStamp, sizeof(struct timeval))` → `EVP_EncryptFinal_ex(ctx, buff + NONCESZ + outLen, &outLen)` → `EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TAGSZ, buff + NONCESZ + sizeof(struct timeval))` → `EVP_CIPHER_CTX_free(ctx)` |
+| 전환본 리턴값 변수 | `ctx`, `outLen`, `buff` |
+| 전환본 use-def | `rawkey`는 `EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, buff)`의 입력으로 사용되고, `ctx`는 `EVP_EncryptUpdate`, `EVP_EncryptFinal_ex`, `EVP_CIPHER_CTX_ctrl`의 입력으로 사용됨. |
 
 ### ch8: `server0.c` → `pqc_server0.c`
 
 | 항목 | 내용 |
 |---|---|
-| API 호출 순서 | `SSL_library_init()` → `SSL_load_error_strings()` → `SSLv23_server_method()` → `SSL_CTX_new(meth)` → `SSL_CTX_use_certificate_chain_file(...)` → `SSL_CTX_use_PrivateKey_file(...)` → `SSL_CTX_check_private_key(...)` → `BIO_new_ssl(ctx, 0)` → `BIO_new_accept(...)` → `BIO_do_accept(...)` → `BIO_do_handshake(...)` → `BIO_puts(...)` → `BIO_write(...)` |
-| 리턴값 변수 | `meth`, `ctx`, `sbio`, `acpt` |
-| 다음 함수에서 사용되는 변수 | `ctx`는 인증서/키 설정과 객체 연결에 사용됨. `sbio`는 handshake와 I/O에 사용됨. |
-| 전환본 호출 순서 | `TLS_server_method()` → `SSL_CTX_new(meth)` → `SSL_CTX_set_min_proto_version(...)` → `SSL_CTX_set_max_proto_version(...)` → `SSL_CTX_set1_groups_list(...)` → `SSL_CTX_set1_sigalgs_list(...)` → `SSL_CTX_use_certificate_chain_file(...)` → `SSL_CTX_use_PrivateKey_file(...)` → `SSL_CTX_check_private_key(...)` → `SSL_CTX_get0_privatekey(ctx)` → `EVP_PKEY_is_a(...)` |
-| 전환본 리턴값 변수 | `meth`, `ctx`, `key` |
-| 전환본 use-def | `ctx`는 인증서와 키 검증에 사용되고, `SSL_CTX_get0_privatekey(ctx)`의 결과 `key`는 `EVP_PKEY_is_a(key, "ML-DSA-65")`로 사용됨. |
+| API 호출 순서 | `DES_set_key(&rawkey, &keySched)` → `DES_ncbc_encrypt(buff, (unsigned char *)&timeStamp, cipherBSz, &keySched, &iv, DES_DECRYPT)` |
+| 리턴값 변수 | 없음 (`DES_set_key`과 `DES_ncbc_encrypt`는 `void` 반환) |
+| 다음 함수에서 사용되는 변수 | `rawkey`는 `DES_set_key(&rawkey, &keySched)`의 입력이고, `keySched`와 `iv`는 `DES_ncbc_encrypt(...)`의 입력으로 사용됨. `timeStamp`는 복호 결과를 받아 이후 시간 비교에 사용됨. |
+| 전환본 호출 순서 | `EVP_CIPHER_CTX_new()` → `EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, buff)` → `EVP_DecryptUpdate(ctx, (unsigned char *)&timeStamp, &outLen, buff + NONCESZ, sizeof(struct timeval))` → `EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TAGSZ, buff + NONCESZ + sizeof(struct timeval))` → `EVP_DecryptFinal_ex(ctx, buff, &outLen)` → `EVP_CIPHER_CTX_free(ctx)` |
+| 전환본 리턴값 변수 | `ctx`, `outLen`, `timeStamp` |
+| 전환본 use-def | `rawkey`와 `buff`는 `EVP_DecryptInit_ex(...)`의 입력으로 사용되고, `ctx`는 `EVP_DecryptUpdate`, `EVP_CIPHER_CTX_ctrl`, `EVP_DecryptFinal_ex`의 입력으로 사용됨. |
 
 ---
 
@@ -211,9 +211,6 @@
    - Legacy: `RAND_seed(seedbuf, 8)` -> `RAND_bytes(buf, n)`
      * 선행 조건: `unsigned char seedbuf[8]`
      * 후행 조건: `unsigned char buf[n]`
-   - PQC: `RAND_seed(seedbuf, 8)` -> `RAND_bytes(buf, n)`
-     * 선행 조건: `unsigned char seedbuf[8]`
-     * 후행 조건: `unsigned char buf[n]`
 
 2. 키 생성
    - Legacy: `RSA_generate_key(1024, RSA_F4, NULL, NULL)` 또는 `EVP_PKEY_set1_RSA(pkey, rsaPriv)`
@@ -238,6 +235,22 @@
    - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_DecryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_DecryptUpdate(ret_ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_DecryptFinal_ex(ret_ctx, decrypted + decrypted_len, &decrypted_len)`
      * 선행 조건: `EVP_CIPHER_CTX *ret_ctx`, `unsigned char mykey[32]`, `unsigned char iv[16]`, `unsigned char ciphertext[ciphertext_len]`
      * 후행 조건: `unsigned char decrypted[decrypted_len]`
+
+3. SYMMKEY 암호
+   - Legacy: `DES_set_key(&rawkey, &keySched) -> DES_ncbc_encrypt((unsigned char *)&timeStamp, buff, sizeof(struct timeval), &keySched, (DES_cblock *)iv, DES_ENCRYPT)`
+     * 선행 조건: `const_DES_cblock rawkey`, `DES_key_schedule keySched`, `unsigned char iv[BUFFSZ]`, `struct timeval timeStamp`
+     * 후행 조건: `unsigned char buff[BUFFSZ]`
+   - PQC: `EVP_CIPHER_CTX_new() -> EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, nonce) -> EVP_EncryptUpdate(ctx, ciphertext, &outLen, (unsigned char *)&timeStamp, sizeof(struct timeval)) -> EVP_EncryptFinal_ex(ctx, ciphertext + outLen, &outLen) -> EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TAGSZ, tag)`
+     * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char rawkey[32]`, `unsigned char nonce[12]`, `struct timeval timeStamp`
+     * 후행 조건: `unsigned char ciphertext[sizeof(struct timeval)]`, `unsigned char tag[TAGSZ]`
+
+3. SYMMKEY 복호
+   - Legacy: `DES_set_key(&rawkey, &keySched) -> DES_ncbc_encrypt(buff, (unsigned char *)&timeStamp, cipherBSz, &keySched, &iv, DES_DECRYPT)`
+     * 선행 조건: `const_DES_cblock rawkey`, `DES_key_schedule keySched`, `DES_cblock iv`, `unsigned char buff[cipherBSz]`
+     * 후행 조건: `struct timeval timeStamp`
+   - PQC: `EVP_CIPHER_CTX_new() -> EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, nonce) -> EVP_DecryptUpdate(ctx, (unsigned char *)&timeStamp, &outLen, ciphertext, sizeof(struct timeval)) -> EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TAGSZ, tag) -> EVP_DecryptFinal_ex(ctx, plaintext, &outLen)`
+     * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char rawkey[32]`, `unsigned char nonce[12]`, `unsigned char ciphertext[sizeof(struct timeval)]`, `unsigned char tag[TAGSZ]`
+     * 후행 조건: `struct timeval timeStamp`
 
 4. 서명
    - Legacy: `EVP_PKEY_set1_RSA(pkey, rsaPriv) -> EVP_SignInit_ex(ctx, EVP_sha1(), NULL) -> EVP_SignUpdate(ctx, message, message_len) -> EVP_SignFinal(ctx, sign, &sign_len, pkey)`

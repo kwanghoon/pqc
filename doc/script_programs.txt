@@ -1,0 +1,72 @@
+
+SearchCryptoAPI.py
+
+    SearchCryptoAPI.py 파이썬 프로그램을 작성해주세요. 이 프로그램은 pqc/doc/mapping.md의 ## 패턴 정리의 구조에서 Legacy API 호출 흐름과 전환 API 호출 흐름 정보를 읽습니다. 이와 함께 선행 조건과 후행 조건에서 패턴간 use-def 흐름을 읽고, 패턴내 use-def는 정의된 변수 이름과 사용된 변수 이름의 관계로 읽어냅니다. 
+
+    그런 다음 인자로 지정한 .c 파일을 열어서 사용된 모든 함수 호출 이름을 추출한 다음(암호 API 함수이든 아니든 무관하게) 패턴에서 언급한 Legacy API 호출 흐름 또는 전환 API 호출 흐름과 완전히 매칭되는 경우에 패턴 이름과 Legacy 또는 PQC를 출력합니다.  Legacy는 OpenSSL 1.0.8u 버전을 함께 출력하고, PQC는 OpenSSL 3.5.8 버전을 함께 출력합니다. 
+
+Note1
+
+    ch8/{client0.c,server0.c}
+
+    과거 OpenSSL의 저수준 암호 API에서는 encrypt라는 이름을 암호화와 복호화를 모두 처리하는 함수에 사용한 경우가 있습니다.
+
+    예를 들어 다음 함수들도 동일한 방식입니다.
+    - DES_ecb_encrypt()
+    - DES_cbc_encrypt()
+    - DES_ncbc_encrypt()
+    - DES_ede3_cbc_encrypt()
+    이 함수들은 마지막 enc 인자로 처리 방향을 결정합니다.
+
+    반면 OpenSSL의 현대적인 EVP API에서는 암호화와 복호화 함수를 명확하게 구분합니다.
+    기존 DES API	현대 EVP API
+    DES_ncbc_encrypt(..., DES_ENCRYPT)	EVP_EncryptInit_ex(), EVP_EncryptUpdate(), EVP_EncryptFinal_ex()
+    DES_ncbc_encrypt(..., DES_DECRYPT)	EVP_DecryptInit_ex(), EVP_DecryptUpdate(), EVP_DecryptFinal_ex()
+
+    OpenSSL 3.0부터 DES_ncbc_encrypt()는 deprecated API로 지정되었습니다.
+
+Note2
+
+    ch8/pqc/{pqc_client0.c,pqc_server0.c}
+
+    둘은 API 호출 순서가 동일하지 않습니다.
+
+    암호 | PQC | OpenSSL 3.5.8
+
+    일반 암호 패턴:
+        EVP_CIPHER_CTX_new()
+        EVP_EncryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv)
+        EVP_EncryptUpdate(ret_ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len)
+        EVP_EncryptFinal_ex(ret_ctx, ciphertext + ciphertext_len, &ciphertext_len)
+
+    SYMMKEY 암호 | PQC | OpenSSL 3.5.8
+
+    대칭키/AEAD 패턴:
+    EVP_CIPHER_CTX_new()
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, nonce)
+    EVP_EncryptUpdate(ctx, ciphertext, &outLen, (unsigned char *)&timeStamp, sizeof(struct timeval))
+    EVP_EncryptFinal_ex(ctx, ciphertext + outLen, &outLen)
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, TAGSZ, tag)
+
+    암호 알고리즘이 AES-256-CBC vs AES-256-GCM으로 다름
+    GCM은 tag를 마지막에 얻는 단계가 있음
+    따라서 순서와 마지막 단계까지 포함한 흐름이 다릅니다
+    같은 이유로 복호도 동일하지 않습니다.
+
+    복호 | PQC | OpenSSL 3.5.8
+
+    일반 복호 패턴:
+        EVP_CIPHER_CTX_new()
+        EVP_DecryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv)
+        EVP_DecryptUpdate(ret_ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len)
+        EVP_DecryptFinal_ex(ret_ctx, decrypted + decrypted_len, &decrypted_len)
+
+    SYMMKEY 복호 | PQC | OpenSSL 3.5.8
+    대칭키/AEAD 복호 패턴:
+        EVP_CIPHER_CTX_new()
+        EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, nonce)
+        EVP_DecryptUpdate(ctx, (unsigned char *)&timeStamp, &outLen, ciphertext, sizeof(struct timeval))
+        EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, TAGSZ, tag)
+        EVP_DecryptFinal_ex(ctx, plaintext, &outLen)
+
+    즉, 둘은 같은 “암호/복호”이라는 큰 범주 안에 있지만, 실제로는 서로 다른 API 패턴입니다. 특히 SYMMKEY 패턴은 AEAD 기반으로 tag 처리까지 포함하므로, 일반 CBC 패턴과 순서가 다릅니다.
