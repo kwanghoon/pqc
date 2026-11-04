@@ -1,0 +1,25 @@
+
+===
+양자내성암호 전환 예제 프로그램으로 작성하였다. ch?/.c (11개 c 소스 파일)은 전환 대상이고, ch?/pqc/.c는 전환 결과입니다. 각 chapter 디렉토리에서, 사용한 OpenSSL API들을 순서대로 나열해주세요.
+
+key1 = ret_ty1 openssl_keygen(ty1 arg1, ...);
+ret2 = ret_ty2 openssl_encrypt(ty2 key1, ty3 plain_text, ty4, encrypted_text);
+ret3 = ret_ty3 openssl_decrypt(ty2 key1, ty4 encrypted_text)
+ret4 = ret_ty4 openssl_free_key(key1);
+이런 식으로 정리해주세요. 함수 이름, 인자 타입, 리턴 타입을 표시하고, 인자 변수 이름과 리턴 값을 받는 변수 이름을 동일하게 이후 함수의 인자 변수 이름으로 사용하여 일종의 Use-def 관계를 파악할 수 있도록요. API 순서도 파악할 수 있도록 해주세요. 어떤 API가 먼저 호출되고, 어떤 API가 나중에 호출될 수 있는지요.
+
+
+===
+ch?/*.c에서 추출한 API들의 합집합을 노드로 하고, 이 집합의 API들의 순서를 에지로 표현한 일종의 OpenSSL 1.0.8u의 쓰임새를 보여주는 제어 흐름 그래프를 작성해주세요.
+
+비슷하게 ch?/pqc/*.c에서 추출한 API들의 합집합을 노드로 하고, 이 집합의 API들의 순서를 에지로 표현한 일종의 OpenSSL 3.5.8의 쓰임새를 보여주는 제어 흐름 그래프를 작성해주세요.
+
+각 노드는 타입/리턴구조 그리고, 리턴값이 있는 경우(void가 아닌 경우) 리턴값에 대한 변수명을 표시해주세요. 이 API의 리턴값 변수 이름를 다른 노드의 API의 인자 이름으로 사용하면 두 API 간의 일종의 use-def 관계가 그래프에 표시되도록 해주세요.
+
+===
+현재 디렉토리는 work/project/pqc/라고 가정하겠습니다.
+
+앞서 각 ch?/*.c에 대해 API 순서와 use-def 분석 결과를 .c 파일별로 별도의 제어 흐름 그래프를 만들어주세요. Mermaid diagram 소스를 doc/ 아래 해당 chapter 아래에 파일명_API_usage_diagram.md 이름의 파일을 생성해주세요.
+이렇게 만든 diagram이 doc/openssl_1_0_8u_API_usage_per_file_diagram.md에 포함되는지 여부를 검증해주세요.
+
+마찬가지로 앞서 각 ch?/pqc/*.c에 대해 API 순서와 use-def 분석 결과를 .c파일별로 별도의 제어 흐름 그래프를 만들어주세요. Mermaid diagram 소스를 doc/ 아래 해당 chapter아래 pqc 디렉토리에 파일명_API_usage_diagram.md 이름의 파일을 생성해주세요. 이렇게 만든 diagram이 doc/openssl_3_5_8_API_usage_per_file_diagram.md에 포함되는지 여부를 검증해주세요.
