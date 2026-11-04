@@ -1,0 +1,700 @@
+아래는 각 chapter별로 “OpenSSL API 호출 순서 + 변수/리턴값의 use-def 흐름”을 정리한 것입니다.
+핵심 규칙은 다음과 같습니다.
+
+A = API(...) 형태에서 A는 정의(def)된 값
+이후 다른 호출의 인자로 A를 넘기면, 그 호출은 A를 사용(use)한다.
+따라서 seedbuf -> RAND_seed(seedbuf,8) -> RSA_generate_key(...) -> rsaPriv -> ... 같은 흐름을 추적할 수 있습니다.
+
+=====
+ch2: 난수 생성 + RSA 키 생성 → ML-DSA 키 생성 전환
+
+원본 ch2/rsagenkey.c
+
+```
+char seedbuf[MAXBUFF];
+RAND_seed(seedbuf, 8);
+
+RSA *rsaPriv = NULL;
+rsaPriv = RSA_generate_key(512, RSA_F4, NULL, NULL);
+
+RSA *rsaPub = NULL;
+rsaPub = RSAPublicKey_dup(rsaPriv);
+
+FILE *pubf = fopen("pubKey.pem", "w");
+FILE *privf = fopen("privKey.pem", "w");
+
+PEM_write_RSAPublicKey(pubf, rsaPub);
+PEM_write_RSAPrivateKey(privf, rsaPriv, NULL, NULL, 0, NULL, NULL);
+
+RSA_free(rsaPriv);
+RSA_free(rsaPub);
+```
+
+타입/리턴 구조:
+
+int RAND_seed(unsigned char *seedbuf, int num);
+RSA *rsaPriv = RSA_generate_key(int bits, BIGNUM *e, BN_GENCB *cb, void *cb_arg);
+RSA *rsaPub = RSAPublicKey_dup(RSA *rsaPriv);
+int PEM_write_RSAPublicKey(FILE *fp, RSA *rsaPub);
+int PEM_write_RSAPrivateKey(FILE *fp, RSA *rsaPriv, const EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
+void RSA_free(RSA *rsa);
+
+
+use-def 흐름:
+
+seedbuf → RAND_seed(seedbuf,8) → seed 입력
+rsaPriv ← RSA_generate_key(...)
+rsaPriv → RSAPublicKey_dup(rsaPriv) → rsaPub
+rsaPub → PEM_write_RSAPublicKey(pubf, rsaPub)
+rsaPriv → PEM_write_RSAPrivateKey(privf, rsaPriv, ...)
+rsaPriv, rsaPub → RSA_free(...)
+
+전환본 ch2/pqc/pqc_mldsa_genkey.c
+
+```
+char seedbuf[MAXBUFF];
+RAND_seed(seedbuf, 8);
+
+EVP_PKEY_CTX *ctx = NULL;
+ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL);
+
+EVP_PKEY *pkey = NULL;
+EVP_PKEY_keygen_init(ctx);
+EVP_PKEY_keygen(ctx, &pkey);
+
+FILE *pubf = fopen("pubKey.pem", "w");
+FILE *privf = fopen("privKey.pem", "w");
+
+PEM_write_PUBKEY(pubf, pkey);
+PEM_write_PrivateKey(privf, pkey, NULL, NULL, 0, NULL, NULL);
+
+EVP_PKEY_free(pkey);
+```
+
+타입/리턴 구조:
+
+int RAND_seed(unsigned char *seedbuf, int num);
+EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_name(OPENSSL_CTX *libctx, const char *name, const char *propq);
+int EVP_PKEY_keygen_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_keygen(EVP_PKEY_CTX *ctx, EVP_PKEY **ppkey);
+int PEM_write_PUBKEY(FILE *fp, EVP_PKEY *pkey);
+int PEM_write_PrivateKey(FILE *fp, EVP_PKEY *pkey, const EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
+void EVP_PKEY_free(EVP_PKEY *pkey);
+
+use-def 흐름:
+
+seedbuf → RAND_seed(seedbuf,8)
+ctx ← EVP_PKEY_CTX_new_from_name(...)
+ctx → EVP_PKEY_keygen_init(ctx) → EVP_PKEY_keygen(ctx, &pkey)
+pkey → PEM_write_PUBKEY(pubf, pkey)
+pkey → PEM_write_PrivateKey(privf, pkey, ...)
+pkey → EVP_PKEY_free(pkey)
+
+
+
+ch3: AES-128 CBC → AES-256 CBC 전환
+
+ch3/aes_128_cbc.c
+
+unsigned char seedbuff[MAXBUFF];
+unsigned char mykey[16] = "\0";
+unsigned char iv[16] = "\0";
+
+getTimeSubstr(seedbuff);
+RAND_seed(seedbuff, 8);
+
+RAND_bytes(mykey, 16);
+RAND_bytes(iv, 16);
+
+EVP_CIPHER_CTX ctx;
+EVP_CIPHER_CTX_init(&ctx);
+EVP_CipherInit_ex(&ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_ENCRYPT);
+EVP_CipherUpdate(&ctx, cipherbuff, &out_len, plainbuff, in_len);
+EVP_CipherFinal_ex(&ctx, cipherbuff, &out_len);
+EVP_CIPHER_CTX_cleanup(&ctx);
+
+EVP_CIPHER_CTX_init(&ctx);
+EVP_CipherInit_ex(&ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_DECRYPT);
+EVP_CipherUpdate(&ctx, plainbuff, &out_len, cipherbuff, in_len);
+EVP_CipherFinal_ex(&ctx, plainbuff, &out_len);
+EVP_CIPHER_CTX_cleanup(&ctx);
+
+타입/리턴 구조:
+
+int RAND_seed(unsigned char *buf, int num);
+int RAND_bytes(unsigned char *buf, int num);
+int EVP_CipherInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *type, ENGINE *impl, const unsigned char *key, const unsigned char *iv, int enc);
+int EVP_CipherUpdate(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl, const unsigned char *in, int inl);
+int EVP_CipherFinal_ex(EVP_CIPHER_CTX *ctx, unsigned char *outm, int *outl);
+void EVP_CIPHER_CTX_cleanup(EVP_CIPHER_CTX *ctx);
+
+use-def 흐름:
+
+mykey ← RAND_bytes(mykey,16)
+iv ← RAND_bytes(iv,16)
+mykey, iv → EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_ENCRYPT)
+mykey, iv → EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_DECRYPT)
+
+전환본 ch3/pqc/pqc_aes_256_cbc.c
+
+```
+unsigned char seedbuff[MAXBUFF];
+unsigned char mykey[32] = "\0";
+unsigned char iv[16] = "\0";
+
+RAND_seed(seedbuff, 8);
+RAND_bytes(mykey, 32);
+RAND_bytes(iv, 16);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, mykey, iv, AES_ENCRYPT);
+EVP_CipherUpdate(ctx, cipherbuff, &out_len, plainbuff, in_len);
+EVP_CipherFinal_ex(ctx, cipherbuff, &out_len);
+EVP_CIPHER_CTX_free(ctx);
+
+ctx = EVP_CIPHER_CTX_new();
+EVP_CipherInit_ex(ctx, EVP_aes_256_cbc(), NULL, mykey, iv, AES_DECRYPT);
+EVP_CipherUpdate(ctx, plainbuff, &out_len, cipherbuff, in_len);
+EVP_CipherFinal_ex(ctx, plainbuff, &out_len);
+EVP_CIPHER_CTX_free(ctx);
+```
+
+타입/리턴 구조:
+
+EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
+void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *ctx);
+나머지는 원본과 동일
+
+use-def 흐름:
+
+mykey → EVP_CipherInit_ex(..., mykey, iv, AES_ENCRYPT/DECRYPT)
+iv → same
+ctx 생성을 거친 뒤 EVP_CipherUpdate / EVP_CipherFinal_ex가 ctx를 소비
+
+ch4: RSA 파일 암호/복호 + 전자봉투 → ML-KEM 전환
+
+원본 ch4/rsatest.c
+```
+unsigned char seedbuff[MAXBUFF];
+RAND_seed(seedbuff, 8);
+
+RSA *rsaPriv = NULL, *rsaPub = NULL;
+rsaPriv = RSA_generate_key(1024, RSA_F4, NULL, NULL);
+rsaPub = RSAPublicKey_dup(rsaPriv);
+
+PEM_write_RSAPrivateKey(fp, rsaPriv, NULL, NULL, 0, NULL, NULL);
+PEM_write_RSAPublicKey(fp, rsaPub);
+
+RSA_public_encrypt(bytes_read, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING);
+RSA_private_decrypt(bytes_read, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING);
+```
+
+타입/리턴 구조:
+
+int RAND_seed(unsigned char *buf, int num);
+RSA *RSA_generate_key(int bits, BIGNUM *e, BN_GENCB *cb, void *cb_arg);
+RSA *RSAPublicKey_dup(RSA *rsa);
+int PEM_write_RSAPrivateKey(FILE *fp, RSA *rsa, const EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
+int PEM_write_RSAPublicKey(FILE *fp, RSA *rsa);
+int RSA_public_encrypt(int flen, const unsigned char *from, unsigned char *to, RSA *rsa, int padding);
+int RSA_private_decrypt(int flen, const unsigned char *from, unsigned char *to, RSA *rsa, int padding);
+
+use-def 흐름:
+
+rsaPriv → RSAPublicKey_dup(rsaPriv) → rsaPub
+rsaPub → RSA_public_encrypt(..., rsaPub, ...)
+rsaPriv → RSA_private_decrypt(..., rsaPriv, ...)
+
+
+원본 ch4/rsa_des_crc.c
+
+```
+unsigned char seedbuff[MAXBUFF];
+unsigned char mykey[16] = "\0";
+unsigned char iv[EVP_MAX_IV_LENGTH] = "\0";
+
+RAND_seed(seedbuff, 8);
+RAND_bytes(mykey, sizeof(mykey));
+RAND_bytes(iv, sizeof(iv));
+
+RSA *rsaPub = readRSAPubKeyFile(...);
+RSA *rsaPriv = readRSAPrivKeyFile(...);
+
+RSA_public_encrypt(psize, mykey, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING);
+EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_ENCRYPT);
+EVP_CipherUpdate(&ctx, ctext, &csize, ptext, psize);
+EVP_CipherFinal_ex(&ctx, ctext, &csize);
+
+RSA_private_decrypt(csize, ctext, mykey, rsaPriv, RSA_PKCS1_OAEP_PADDING);
+EVP_CipherInit_ex(&ctx, EVP_des_ede_cbc(), NULL, mykey, iv, DES_DECRYPT);
+EVP_CipherUpdate(&ctx, ptext, &psize, ctext, csize);
+EVP_CipherFinal_ex(&ctx, ptext, &psize);
+```
+
+use-def 흐름:
+mykey ← RAND_bytes(mykey,...)
+iv ← RAND_bytes(iv,...)
+mykey → RSA_public_encrypt(..., rsaPub, ...)
+mykey, iv → EVP_CipherInit_ex(..., mykey, iv, DES_ENCRYPT)
+mykey, iv → EVP_CipherInit_ex(..., mykey, iv, DES_DECRYPT)
+
+전환본 ch4/pqc/pqc_mlkem_file.c
+
+```
+EVP_PKEY *key = NULL;
+key = generate_mlkem_key();
+
+EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-KEM-768", NULL);
+EVP_PKEY_keygen_init(ctx);
+EVP_PKEY_generate(ctx, &key);
+
+PEM_write_PrivateKey(file, key, NULL, NULL, 0, NULL, NULL);
+PEM_write_PUBKEY(file, key);
+
+EVP_PKEY_CTX *kem_ctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
+EVP_PKEY_encapsulate_init(kem_ctx, NULL);
+EVP_PKEY_encapsulate(kem_ctx, kem_ciphertext, &kem_ciphertext_len, shared_secret, &shared_secret_len);
+
+RAND_bytes(nonce, sizeof(nonce));
+
+EVP_CIPHER_CTX *cipher_ctx = EVP_CIPHER_CTX_new();
+EVP_EncryptInit_ex(cipher_ctx, EVP_aes_256_gcm(), NULL, shared_secret, nonce);
+EVP_EncryptUpdate(cipher_ctx, output_buffer, &output_len, input_buffer, bytes_read);
+EVP_EncryptFinal_ex(cipher_ctx, output_buffer, &final_len);
+EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_GCM_GET_TAG, sizeof(tag), tag);
+
+kem_ctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
+EVP_PKEY_decapsulate_init(kem_ctx, NULL);
+EVP_PKEY_decapsulate(kem_ctx, shared_secret, &shared_secret_len, kem_ciphertext, kem_ciphertext_len);
+
+cipher_ctx = EVP_CIPHER_CTX_new();
+EVP_DecryptInit_ex(cipher_ctx, EVP_aes_256_gcm(), NULL, shared_secret, nonce);
+EVP_DecryptUpdate(cipher_ctx, output_buffer, &output_len, input_buffer, bytes_read);
+EVP_CIPHER_CTX_ctrl(cipher_ctx, EVP_CTRL_GCM_SET_TAG, sizeof(tag), tag);
+EVP_DecryptFinal_ex(cipher_ctx, output_buffer, &final_len);
+```
+
+타입/리턴 구조:
+
+EVP_PKEY *generate_mlkem_key(void);
+EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_name(OPENSSL_CTX *libctx, const char *name, const char *propq);
+int EVP_PKEY_keygen_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_generate(EVP_PKEY_CTX *ctx, EVP_PKEY **pkey);
+int PEM_write_PrivateKey(FILE *fp, EVP_PKEY *pkey, const EVP_CIPHER *enc, unsigned char *kstr, int klen, pem_password_cb *cb, void *u);
+int PEM_write_PUBKEY(FILE *fp, EVP_PKEY *pkey);
+EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_pkey(OPENSSL_CTX *libctx, EVP_PKEY *pkey, const char *propq);
+int EVP_PKEY_encapsulate_init(EVP_PKEY_CTX *ctx, const OSSL_PARAM params[]);
+int EVP_PKEY_encapsulate(EVP_PKEY_CTX *ctx, unsigned char *out, size_t *outlen, unsigned char *secret, size_t *secretlen);
+int RAND_bytes(unsigned char *buf, int num);
+EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
+int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *type, ENGINE *impl, const unsigned char *key, const unsigned char *iv);
+int EVP_EncryptUpdate(...);
+int EVP_EncryptFinal_ex(...);
+int EVP_CIPHER_CTX_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg, void *ptr);
+int EVP_PKEY_decapsulate_init(...), EVP_PKEY_decapsulate(...)
+int EVP_DecryptInit_ex(...), EVP_DecryptUpdate(...), EVP_DecryptFinal_ex(...)
+
+use-def 흐름:
+
+key ← generate_mlkem_key() (via EVP_PKEY_generate)
+key → PEM_write_PrivateKey(file, key, ...), PEM_write_PUBKEY(file, key)
+key → EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL) → EVP_PKEY_encapsulate(...)
+shared_secret ← EVP_PKEY_encapsulate(..., shared_secret, ...)
+nonce ← RAND_bytes(nonce, ...)
+shared_secret, nonce → EVP_EncryptInit_ex(...)
+decrypt phase mirrors with EVP_PKEY_decapsulate(...) and EVP_DecryptInit_ex(...)
+
+
+ch5: RSA-SHA1 서명/검증 → ML-DSA 서명/검증 전환
+
+원본 ch5/rsa_sha1_sign_test.c
+
+```
+RSA *rsaPriv = NULL, *rsaPub = NULL;
+RAND_seed(rands, 0);
+
+rsaPriv = RSA_generate_key(512, RSA_F4, NULL, NULL);
+rsaPub = RSAPublicKey_dup(rsaPriv);
+
+EVP_PKEY *pkey = EVP_PKEY_new();
+EVP_PKEY_set1_RSA(pkey, rsaPriv);
+
+EVP_MD_CTX_init(&ctx);
+EVP_SignInit_ex(&ctx, EVP_sha1(), NULL);
+EVP_SignUpdate(&ctx, plaintext, plsize);
+EVP_SignFinal(&ctx, sign, &signSize, pkey);
+
+EVP_PKEY *pukey = EVP_PKEY_new();
+EVP_PKEY_set1_RSA(pukey, rsaPub);
+
+EVP_MD_CTX_init(&ctx);
+EVP_VerifyInit_ex(&ctx, EVP_sha1(), NULL);
+EVP_VerifyUpdate(&ctx, plaintext, plsize);
+EVP_VerifyFinal(&ctx, sign, signSize, pukey);
+```
+
+타입/리턴 구조:
+
+int RAND_seed(unsigned char *buf, int num);
+RSA *RSA_generate_key(int bits, BIGNUM *e, BN_GENCB *cb, void *cb_arg);
+RSA *RSAPublicKey_dup(RSA *rsa);
+EVP_PKEY *EVP_PKEY_new(void);
+int EVP_PKEY_set1_RSA(EVP_PKEY *pkey, RSA *key);
+int EVP_SignInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl);
+int EVP_SignUpdate(EVP_MD_CTX *ctx, const void *d, size_t cnt);
+int EVP_SignFinal(EVP_MD_CTX *ctx, unsigned char *sigret, unsigned int *siglen, EVP_PKEY *pkey);
+int EVP_VerifyInit_ex(EVP_MD_CTX *ctx, const EVP_MD *type, ENGINE *impl);
+int EVP_VerifyUpdate(EVP_MD_CTX *ctx, const void *d, size_t cnt);
+int EVP_VerifyFinal(EVP_MD_CTX *ctx, const unsigned char *sigbuf, unsigned int siglen, EVP_PKEY *pkey);
+
+use-def 흐름:
+
+rsaPriv → EVP_PKEY_set1_RSA(pkey, rsaPriv)
+rsaPub → EVP_PKEY_set1_RSA(pukey, rsaPub)
+pkey → EVP_SignFinal(..., pkey)
+pukey → EVP_VerifyFinal(..., pukey)
+
+전환본 ch5/pqc/pqc_mldsa_sign_test.c
+
+EVP_PKEY *key = NULL;
+key = generateKey();
+
+EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+EVP_DigestSignInit_ex(ctx, NULL, NULL, NULL, NULL, priv, NULL);
+EVP_DigestSign(ctx, sign, signSize, plaintext, plsize);
+
+ctx = EVP_MD_CTX_new();
+EVP_DigestVerifyInit_ex(ctx, NULL, NULL, NULL, NULL, pub, NULL);
+EVP_DigestVerify(ctx, sign, signSize, plaintext, plsize);
+
+타입/리턴 구조:
+
+EVP_PKEY *generateKey(void); 내부에서:
+EVP_PKEY_CTX *EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL);
+int EVP_PKEY_keygen_init(EVP_PKEY_CTX *ctx);
+int EVP_PKEY_generate(EVP_PKEY_CTX *ctx, EVP_PKEY **pkey);
+EVP_MD_CTX *EVP_MD_CTX_new(void);
+int EVP_DigestSignInit_ex(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx, const char *mdname, OPENSSL_CTX *libctx, const char *propq, EVP_PKEY *pkey, const OSSL_PARAM params[]);
+int EVP_DigestSign(EVP_MD_CTX *ctx, unsigned char *sigret, size_t *siglen, const unsigned char *tbs, size_t tbslen);
+int EVP_DigestVerifyInit_ex(...);
+int EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sig, size_t siglen, const unsigned char *tbs, size_t tbslen);
+
+use-def 흐름:
+
+key ← EVP_PKEY_generate(...)
+key → EVP_DigestSignInit_ex(..., key, ...) / EVP_DigestVerifyInit_ex(..., key, ...)
+sign/signSize 정의 → 검증 입력값으로 사용
+
+ch7: 파일 서명/검증용 RSA SHA-1 → HashML-DSA 전환
+
+원본 ch7/hash_sign.c
+
+RSA *rsaPriv = PEM_read_RSAPrivateKey(fp, NULL, NULL, NULL);
+EVP_PKEY *pkey = EVP_PKEY_new();
+EVP_PKEY_set1_RSA(pkey, rsaPriv);
+
+EVP_MD_CTX_init(&ctx);
+EVP_SignInit_ex(&ctx, EVP_sha1(), NULL);
+EVP_SignUpdate(&ctx, buff, inLen);
+EVP_SignFinal(&ctx, sign, &signSize, pkey);
+
+RSA *rsaPub = PEM_read_RSAPublicKey(fp, NULL, NULL, NULL);
+EVP_PKEY *pkey = EVP_PKEY_new();
+EVP_PKEY_set1_RSA(pkey, rsaPub);
+
+EVP_VerifyInit_ex(&ctx, EVP_sha1(), NULL);
+EVP_VerifyUpdate(&ctx, buff, inLen);
+EVP_VerifyFinal(&ctx, sign, signSize, pkey);
+
+use-def 흐름:
+rsaPriv → EVP_PKEY_set1_RSA(pkey, rsaPriv)
+rsaPub → EVP_PKEY_set1_RSA(pkey, rsaPub)
+pkey → EVP_SignFinal(..., pkey) / EVP_VerifyFinal(..., pkey)
+
+전환본 ch7/pqc/pqc_hash_sign.c
+
+```
+EVP_PKEY *pkey = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+
+EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+EVP_DigestInit_ex(ctx, EVP_sha512(), NULL);
+EVP_DigestUpdate(ctx, buff, inLen);
+EVP_DigestFinal_ex(ctx, hash, &hashSize);
+
+signHashed(pkey, hash, hashSize, sign, &signSize);
+
+EVP_PKEY *pkey = PEM_read_PUBKEY(fp, NULL, NULL, NULL);
+
+EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+EVP_DigestInit_ex(ctx, EVP_sha512(), NULL);
+EVP_DigestUpdate(ctx, buff, inLen);
+EVP_DigestFinal_ex(ctx, hash, &hashSize);
+
+verifyHashed(pkey, hash, hashSize, sign, signSize);
+```
+
+타입 선언
+int EVP_DigestSignInit_ex(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
+                           const char *mdname, OPENSSL_CTX *libctx,
+                           const char *propq, EVP_PKEY *pkey,
+                           const OSSL_PARAM params[]);
+int EVP_DigestSign(EVP_MD_CTX *ctx, unsigned char *sigret, size_t *siglen,
+                   const unsigned char *tbs, size_t tbslen);
+
+int EVP_DigestVerifyInit_ex(EVP_MD_CTX *ctx, EVP_PKEY_CTX **pctx,
+                            const char *mdname, OPENSSL_CTX *libctx,
+                            const char *propq, EVP_PKEY *pkey,
+                            const OSSL_PARAM params[]);
+int EVP_DigestVerify(EVP_MD_CTX *ctx, const unsigned char *sig, size_t siglen,
+                     const unsigned char *tbs, size_t tbslen);
+
+use-def 흐름:
+hash ← EVP_DigestFinal_ex(...)
+hash → signHashed(pkey, hash, hashSize, sign, &signSize)
+hash → verifyHashed(pkey, hash, hashSize, sign, signSize)
+
+
+ch8: DES-CBC + Socket 암호통신 → AES-256-GCM 전환
+
+원본 ch8/client0.c
+
+const_DES_cblock rawkey;
+DES_key_schedule keySched;
+DES_set_key(&rawkey, &keySched);
+
+DES_ncbc_encrypt((unsigned char *)&timeStamp, buff,
+                sizeof(struct timeval), &keySched, (DES_cblock *)iv,
+                DES_ENCRYPT);
+
+타입/리턴 구조:
+void DES_set_key(const_DES_cblock *userKey, DES_key_schedule *schedule);
+void DES_ncbc_encrypt(const unsigned char *in, unsigned char *out, long length,                   DES_key_schedule *ks, DES_cblock *iv, int enc);
+
+원본 ch8/server0.c
+
+DES_set_key(&rawkey, &keySched);
+DES_ncbc_encrypt(buff, (unsigned char *)&timeStamp, cipherBSz,
+                &keySched, &iv, DES_DECRYPT);
+
+use-def 흐름:
+rawkey → DES_set_key(&rawkey, &keySched)
+keySched + iv → DES_ncbc_encrypt(..., &keySched, &iv, DES_ENCRYPT/DECRYPT)
+
+
+전환본 ch8/pqc/pqc_client0.c
+
+```
+unsigned char rawkey[32];
+RAND_bytes(buff, 12);
+
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, buff);
+EVP_EncryptUpdate(ctx, buff + 12, &outLen,
+                 (unsigned char *)&timeStamp, sizeof(struct timeval));
+EVP_EncryptFinal_ex(ctx, buff + 12 + outLen, &outLen);
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, buff + 12 + sizeof(struct timeval));
+EVP_CIPHER_CTX_free(ctx);
+```
+
+전환본 ch8/pqc/pqc_server0.c
+
+```
+EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, rawkey, buff);
+EVP_DecryptUpdate(ctx, (unsigned char *)&timeStamp, &outLen,
+                  buff + 12, sizeof(struct timeval));
+EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, buff + 12 + sizeof(struct timeval));
+EVP_DecryptFinal_ex(ctx, buff, &outLen);
+EVP_CIPHER_CTX_free(ctx);
+```
+
+타입/리턴 구조:
+
+int RAND_bytes(unsigned char *buf, int num);
+EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
+int EVP_EncryptInit_ex(EVP_CIPHER_CTX *ctx, const EVP_CIPHER *type, ENGINE *impl, const unsigned char *key, const unsigned char *iv);
+int EVP_EncryptUpdate(...);
+int EVP_EncryptFinal_ex(...);
+int EVP_CIPHER_CTX_ctrl(EVP_CIPHER_CTX *ctx, int cmd, int p1, void *p2);
+int EVP_DecryptInit_ex(...);
+int EVP_DecryptUpdate(...);
+int EVP_DecryptFinal_ex(...);
+void EVP_CIPHER_CTX_free(EVP_CIPHER_CTX *ctx);
+
+use-def 흐름:
+
+rawkey → EVP_EncryptInit_ex(...)
+buff (nonce) → EVP_EncryptInit_ex(..., rawkey, buff) / EVP_DecryptInit_ex(..., rawkey, buff)
+timeStamp → EVP_EncryptUpdate(..., (unsigned char *)&timeStamp, ...)
+timeStamp → EVP_DecryptUpdate(..., (unsigned char *)&timeStamp, ...)
+
+
+ch9: TLS 1.2 → TLS 1.3 + ML-KEM/ML-DSA 전환
+
+원본 ch9/ssl_client.c
+
+```
+SSL_library_init();
+SSL_load_error_strings();
+
+const SSL_METHOD *meth = SSLv23_client_method();
+SSL_CTX *ctx = SSL_CTX_new(meth);
+
+SSL_CTX_load_verify_locations(ctx, "CACert.pem", NULL);
+SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+
+BIO *sbio = BIO_new_ssl_connect(ctx);
+BIO_get_ssl(sbio, &ssl);
+SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
+X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), "localhost", 0);
+BIO_set_conn_hostname(sbio, "127.0.0.1:4433");
+BIO_do_connect(sbio);
+BIO_do_handshake(sbio);
+
+SSL_get_server_tmp_key(ssl, &tmpkey);
+SSL_get_version(ssl);
+SSL_get_cipher_name(ssl);
+BIO_puts(sbio, "GET / ...");
+BIO_read(sbio, tmpbuf, 1024);
+BIO_write(out, tmpbuf, len);
+```
+
+타입/리턴 구조:
+void SSL_library_init(void);
+void SSL_load_error_strings(void);
+const SSL_METHOD *SSLv23_client_method(void);
+SSL_CTX *SSL_CTX_new(const SSL_METHOD *method);
+int SSL_CTX_load_verify_locations(SSL_CTX *ctx, const char *CAfile, const char *CApath);
+void SSL_CTX_set_verify(SSL_CTX *ctx, int mode, int (*verify_callback)(int, X509_STORE_CTX *));
+BIO *BIO_new_ssl_connect(SSL_CTX *ctx);
+void BIO_get_ssl(BIO *bio, SSL **sslp);
+void SSL_set_mode(SSL *ssl, int mode);
+int X509_VERIFY_PARAM_set1_host(X509_VERIFY_PARAM *param, const char *name, size_t namelen);
+void BIO_set_conn_hostname(BIO *bio, const char *name);
+int BIO_do_connect(BIO *bio);
+int BIO_do_handshake(BIO *bio);
+int SSL_get_server_tmp_key(SSL *ssl, EVP_PKEY **pkey);
+const char *SSL_get_version(const SSL *ssl);
+const char *SSL_get_cipher_name(const SSL *ssl);
+int BIO_read(BIO *bio, void *buf, int len);
+int BIO_write(BIO *bio, const void *buf, int len);
+
+원본 ch9/ssl_server.c
+
+```
+SSL_library_init();
+SSL_load_error_strings();
+
+const SSL_METHOD *meth = SSLv23_server_method();
+SSL_CTX *ctx = SSL_CTX_new(meth);
+
+SSL_CTX_use_certificate_chain_file(ctx, "BobCert.pem");
+SSL_CTX_use_PrivateKey_file(ctx, "BobPriv.pem", SSL_FILETYPE_PEM);
+SSL_CTX_check_private_key(ctx);
+
+BIO *sbio = BIO_new_ssl(ctx, 0);
+SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
+
+BIO *acpt = BIO_new_accept("4433");
+BIO_do_accept(acpt);
+BIO_do_handshake(sbio);
+BIO_puts(sbio, "...HTTP...");
+BIO_write(sbio, tmpbuf, len);
+```
+
+use-def 흐름:
+ctx 생성 → certificate/key 설정 → handshake → send/receive
+
+전환본 ch9/pqc/pqc_ssl_client.c
+
+```
+const SSL_METHOD *meth = TLS_client_method();
+SSL_CTX *ctx = SSL_CTX_new(meth);
+
+SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024");
+SSL_CTX_set1_sigalgs_list(ctx, "mldsa65");
+SSL_CTX_load_verify_locations(ctx, "CACert.pem", NULL);
+
+BIO *sbio = BIO_new_ssl_connect(ctx);
+BIO_get_ssl(sbio, &ssl);
+SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
+X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), "localhost", 0);
+
+BIO_do_connect(sbio);
+BIO_do_handshake(sbio);
+
+printf("Negotiated: %s, group %s, cipher %s\n",
+       SSL_get_version(ssl),
+       SSL_get0_group_name(ssl),
+       SSL_get_cipher_name(ssl));
+```
+
+전환본 ch9/pqc/pqc_ssl_server.c
+
+```
+const SSL_METHOD *meth = TLS_server_method();
+SSL_CTX *ctx = SSL_CTX_new(meth);
+
+SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION);
+SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
+SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024");
+SSL_CTX_set1_sigalgs_list(ctx, "mldsa65");
+SSL_CTX_use_certificate_chain_file(ctx, "BobCert.pem");
+SSL_CTX_use_PrivateKey_file(ctx, "BobPriv.pem", SSL_FILETYPE_PEM);
+SSL_CTX_check_private_key(ctx);
+EVP_PKEY_is_a(SSL_CTX_get0_privatekey(ctx), "ML-DSA-65");
+```
+
+타입/리턴 구조:
+
+const SSL_METHOD *TLS_client_method(void);
+const SSL_METHOD *TLS_server_method(void);
+int SSL_CTX_set_min_proto_version(SSL_CTX *ctx, int version);
+int SSL_CTX_set_max_proto_version(SSL_CTX *ctx, int version);
+int SSL_CTX_set1_groups_list(SSL_CTX *ctx, const char *groups);
+int SSL_CTX_set1_sigalgs_list(SSL_CTX *ctx, const char *sigalgs);
+const char *SSL_get0_group_name(const SSL *ssl);
+int EVP_PKEY_is_a(EVP_PKEY *pkey, const char *name);
+EVP_PKEY *SSL_CTX_get0_privatekey(const SSL_CTX *ctx);
+use-def 흐름:
+
+ctx → SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) → SSL_CTX_set_max_proto_version(...) → SSL_CTX_set1_groups_list(...) → SSL_CTX_set1_sigalgs_list(...)
+ctx → SSL_CTX_use_certificate_chain_file(ctx, ...) / SSL_CTX_use_PrivateKey_file(...) / SSL_CTX_check_private_key(ctx)
+ctx → SSL_CTX_get0_privatekey(ctx) → EVP_PKEY_is_a(...)로 ML-DSA 검증
+
+
+=====
+
+요약: 일반적인 호출 순서 패턴
+
+난수/시드:
+RAND_seed(seedbuf, 8);
+RAND_bytes(buf, n);
+
+키 생성:
+RSA: RSA_generate_key(...) → RSAPublicKey_dup(...)
+ML-DSA: EVP_PKEY_CTX_new_from_name(...) → EVP_PKEY_keygen_init(...) → EVP_PKEY_keygen(...)
+ML-KEM: EVP_PKEY_CTX_new_from_name(...) → EVP_PKEY_keygen_init(...) → EVP_PKEY_generate(...)
+
+키 저장:
+RSA: PEM_write_RSAPublicKey, PEM_write_RSAPrivateKey
+ML-DSA: PEM_write_PUBKEY, PEM_write_PrivateKey
+TLS: certificate/key file loading via SSL_CTX_use_certificate_chain_file, SSL_CTX_use_PrivateKey_file
+
+암호/복호:
+EVP_CipherInit_ex(...) → EVP_CipherUpdate(...) → EVP_CipherFinal_ex(...)
+또는 EVP_EncryptInit_ex(...) / EVP_EncryptUpdate(...) / EVP_EncryptFinal_ex(...)
+또는 EVP_DecryptInit_ex(...) / EVP_DecryptUpdate(...) / EVP_DecryptFinal_ex(...)
+
+서명/검증:
+RSA: EVP_PKEY_set1_RSA(...) → EVP_SignInit_ex(...) → EVP_SignUpdate(...) → EVP_SignFinal(...)
+ML-DSA: EVP_DigestSignInit_ex(...) → EVP_DigestSign(...)
+검증: EVP_DigestVerifyInit_ex(...) → EVP_DigestVerify(...)
+
+종료:
+RSA_free(...)
+EVP_PKEY_free(...)
+EVP_CIPHER_CTX_free(...)
+SSL_CTX_free(ctx)
