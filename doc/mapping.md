@@ -216,13 +216,21 @@
    - Legacy: `RSA_generate_key(...)` 또는 `EVP_PKEY_set1_RSA(...)`
    - PQC: `EVP_PKEY_CTX_new_from_name(...)` → `EVP_PKEY_keygen_init(...)` → `EVP_PKEY_keygen(...)`
 
-3. 암호/복호
+3. 암호
    - Legacy: `EVP_CipherInit_ex(...)` → `EVP_CipherUpdate(...)` → `EVP_CipherFinal_ex(...)`
-   - PQC: `EVP_EncryptInit_ex(...)` / `EVP_DecryptInit_ex(...)` → `EVP_EncryptUpdate(...)` / `EVP_DecryptUpdate(...)` → `EVP_EncryptFinal_ex(...)` / `EVP_DecryptFinal_ex(...)`
+   - PQC: `EVP_EncryptInit_ex(...)` → `EVP_EncryptUpdate(...)`  → `EVP_EncryptFinal_ex(...)` 
 
-4. 서명/검증
+3. 복호
+   - Legacy: `EVP_CipherInit_ex(...)` → `EVP_CipherUpdate(...)` → `EVP_CipherFinal_ex(...)`
+   - PQC: `EVP_DecryptInit_ex(...)` → `EVP_DecryptUpdate(...)` → `EVP_DecryptFinal_ex(...)`   
+
+4. 서명
    - Legacy: `EVP_PKEY_set1_RSA(...)` → `EVP_Sign...` / `EVP_Verify...`
-   - PQC: `EVP_DigestSignInit_ex(...)` / `EVP_DigestVerifyInit_ex(...)` → `EVP_DigestSign(...)` / `EVP_DigestVerify(...)`
+   - PQC: `EVP_DigestSignInit_ex(...)` → `EVP_DigestSign(...)`
+
+4. 검증
+   - Legacy: `EVP_PKEY_set1_RSA(...)` → `EVP_Sign...` / `EVP_Verify...`
+   - PQC: `EVP_DigestVerifyInit_ex(...)` → `EVP_DigestVerify(...)`
 
 5. TLS 설정
    - Legacy: `SSLv23_client_method()` / `SSLv23_server_method()`
