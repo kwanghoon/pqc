@@ -209,62 +209,56 @@
 
 1. 난수/시드 생성
    - Legacy: `RAND_seed(seedbuf, 8)` -> `RAND_bytes(buf, n)`
-    * 선행 조건:
-    * 후행 조건:
-   - 생성된 값이 키/IV/nonce의 입력으로 이어짐.
+     * 선행 조건: `unsigned char seedbuf[8]`
+     * 후행 조건: `unsigned char buf[n]`
+   - PQC: `RAND_seed(seedbuf, 8)` -> `RAND_bytes(buf, n)`
+     * 선행 조건: `unsigned char seedbuf[8]`
+     * 후행 조건: `unsigned char buf[n]`
 
 2. 키 생성
    - Legacy: `RSA_generate_key(1024, RSA_F4, NULL, NULL)` 또는 `EVP_PKEY_set1_RSA(pkey, rsaPriv)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_PKEY *pkey`, `RSA *rsaPriv`
+     * 후행 조건: `RSA *rsaPriv`, `RSA *rsaPub`
    - PQC: `EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL)` → `EVP_PKEY_keygen_init(ctx)` → `EVP_PKEY_keygen(ctx, &pkey)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_PKEY_CTX *ctx`
+     * 후행 조건: `EVP_PKEY *pkey`
 
 3. 암호
    - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_ENCRYPT) -> EVP_CipherUpdate(ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len) -> EVP_CipherFinal_ex(ctx, ciphertext + ciphertext_len, &ciphertext_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char mykey[16]`, `unsigned char iv[16]`, `unsigned char plaintext[plaintext_len]`
+     * 후행 조건: `unsigned char ciphertext[ciphertext_len]`
    - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_EncryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_EncryptUpdate(ret_ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len) -> EVP_EncryptFinal_ex(ret_ctx, ciphertext + ciphertext_len, &ciphertext_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_CIPHER_CTX *ret_ctx`, `unsigned char mykey[32]`, `unsigned char iv[16]`, `unsigned char plaintext[plaintext_len]`
+     * 후행 조건: `unsigned char ciphertext[ciphertext_len]`
 
 3. 복호
    - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_DECRYPT) -> EVP_CipherUpdate(ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_CipherFinal_ex(ctx, decrypted + decrypted_len, &decrypted_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char mykey[16]`, `unsigned char iv[16]`, `unsigned char ciphertext[ciphertext_len]`
+     * 후행 조건: `unsigned char decrypted[decrypted_len]`
    - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_DecryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_DecryptUpdate(ret_ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_DecryptFinal_ex(ret_ctx, decrypted + decrypted_len, &decrypted_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_CIPHER_CTX *ret_ctx`, `unsigned char mykey[32]`, `unsigned char iv[16]`, `unsigned char ciphertext[ciphertext_len]`
+     * 후행 조건: `unsigned char decrypted[decrypted_len]`
 
 4. 서명
    - Legacy: `EVP_PKEY_set1_RSA(pkey, rsaPriv) -> EVP_SignInit_ex(ctx, EVP_sha1(), NULL) -> EVP_SignUpdate(ctx, message, message_len) -> EVP_SignFinal(ctx, sign, &sign_len, pkey)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_PKEY *pkey`, `RSA *rsaPriv`, `unsigned char message[message_len]`
+     * 후행 조건: `unsigned char sign[sign_len]`
    - PQC: `ret_ctx = EVP_MD_CTX_new() -> EVP_DigestSignInit_ex(ret_ctx, NULL, EVP_sha256(), NULL, pkey, NULL) -> EVP_DigestSign(ret_ctx, sign, &sign_len, message, message_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_MD_CTX *ret_ctx`, `EVP_PKEY *pkey`, `unsigned char message[message_len]`
+     * 후행 조건: `unsigned char sign[sign_len]`
 
 4. 검증
    - Legacy: `EVP_PKEY_set1_RSA(pukey, rsaPub) -> EVP_VerifyInit_ex(ctx, EVP_sha1(), NULL) -> EVP_VerifyUpdate(ctx, message, message_len) -> EVP_VerifyFinal(ctx, sign, sign_len, pukey)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_PKEY *pukey`, `RSA *rsaPub`, `unsigned char sign[sign_len]`, `unsigned char message[message_len]`
+     * 후행 조건: `int verify_result`
    - PQC: `ret_ctx = EVP_MD_CTX_new() -> EVP_DigestVerifyInit_ex(ret_ctx, NULL, EVP_sha256(), NULL, pukey, NULL) -> EVP_DigestVerify(ret_ctx, sign, sign_len, message, message_len)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `EVP_MD_CTX *ret_ctx`, `EVP_PKEY *pukey`, `unsigned char sign[sign_len]`, `unsigned char message[message_len]`
+     * 후행 조건: `int verify_result`
 
 5. TLS 설정
    - Legacy: `SSLv23_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL) -> SSL_CTX_load_verify_locations(ctx, CAfile, NULL)`
-    * 선행 조건:
-    * 후행 조건:
+     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
+     * 후행 조건: `SSL_CTX *ctx`
    - PQC: `TLS_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024") -> SSL_CTX_set1_sigalgs_list(ctx, "mldsa65")`
-    * 선행 조건:
-    * 후행 조건:
-
-6. use-def 관점의 핵심
-   - `A = API(...)`에서 반환된 `A`가 뒤이어 `B(...)`의 인자로 전달될 때, 해당 연결을 use-def 관계로 간주한다.
-   - 예: `rsaPriv = RSA_generate_key(...) -> RSA_private_decrypt(..., rsaPriv, ...)`
-   - 예: `key = EVP_PKEY_generate(...) -> EVP_DigestSignInit_ex(..., key, ...)`
-   - 예: `ctx = SSL_CTX_new(meth) -> SSL_CTX_set1_groups_list(ctx, ...)`
-
-이 문서는 chapter별 파일 매핑과 각 파일의 호출 순서, 리턴값 변수, use-def 관계를 함께 정리해 전환 전/후 코드의 데이터 흐름을 비교하는 데 사용하도록 작성되었다.
+     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
+     * 후행 조건: `SSL_CTX *ctx`
