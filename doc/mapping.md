@@ -220,7 +220,7 @@
      * 선행 조건: `EVP_PKEY_CTX *ctx`
      * 후행 조건: `EVP_PKEY *pkey`
 
-3. 암호
+3.  EVP기반 CBC 암호
    - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_ENCRYPT) -> EVP_CipherUpdate(ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len) -> EVP_CipherFinal_ex(ctx, ciphertext + ciphertext_len, &ciphertext_len)`
      * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char mykey[16]`, `unsigned char iv[16]`, `unsigned char plaintext[plaintext_len]`
      * 후행 조건: `unsigned char ciphertext[ciphertext_len]`
@@ -228,13 +228,29 @@
      * 선행 조건: `EVP_CIPHER_CTX *ret_ctx`, `unsigned char mykey[32]`, `unsigned char iv[16]`, `unsigned char plaintext[plaintext_len]`
      * 후행 조건: `unsigned char ciphertext[ciphertext_len]`
 
-3. 복호
+3. EVP기반 CBC 복호
    - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_DECRYPT) -> EVP_CipherUpdate(ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_CipherFinal_ex(ctx, decrypted + decrypted_len, &decrypted_len)`
      * 선행 조건: `EVP_CIPHER_CTX *ctx`, `unsigned char mykey[16]`, `unsigned char iv[16]`, `unsigned char ciphertext[ciphertext_len]`
      * 후행 조건: `unsigned char decrypted[decrypted_len]`
    - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_DecryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_DecryptUpdate(ret_ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_DecryptFinal_ex(ret_ctx, decrypted + decrypted_len, &decrypted_len)`
      * 선행 조건: `EVP_CIPHER_CTX *ret_ctx`, `unsigned char mykey[32]`, `unsigned char iv[16]`, `unsigned char ciphertext[ciphertext_len]`
      * 후행 조건: `unsigned char decrypted[decrypted_len]`
+
+3. RSA OAEP기반 암호
+   - Legacy: `RSA_public_encrypt((int)bytes_read, ptext, ctext, rsaPub, RSA_PKCS1_OAEP_PADDING)`
+     * 선행 조건: `RSA *rsaPub`, `unsigned char ptext[bytes_read]`
+     * 후행 조건: `unsigned char ctext[csize]`
+   - PQC: `EVP_PKEY_CTX_new_from_pkey(NULL, pub, NULL) -> EVP_PKEY_encapsulate_init(kem, NULL) -> EVP_PKEY_encapsulate(kem, header + MAGIC_LEN + 4, &ct_len, secret, &secret_len) -> RAND_bytes(header + MAGIC_LEN + 4 + ct_len, NONCE_LEN) -> EVP_EncryptInit_ex(cipher, EVP_aes_256_gcm(), NULL, secret, header + header_len - NONCE_LEN) -> EVP_EncryptUpdate(cipher, out_buf, &n, in_buf, (int)r) -> EVP_EncryptFinal_ex(cipher, out_buf, &n) -> EVP_CIPHER_CTX_ctrl(cipher, EVP_CTRL_GCM_GET_TAG, TAG_LEN, tag)`
+     * 선행 조건: `EVP_PKEY *pub`, `EVP_PKEY_CTX *kem`, `unsigned char secret[64]`, `unsigned char header[HEADER_MAX]`, `unsigned char in_buf[CHUNK_LEN]`
+     * 후행 조건: `unsigned char header[HEADER_MAX]`, `unsigned char tag[TAG_LEN]`
+
+3. RSA OAEP 기반 복호
+   - Legacy: `RSA_private_decrypt((int)bytes_read, ctext, dtext, rsaPriv, RSA_PKCS1_OAEP_PADDING)`
+     * 선행 조건: `RSA *rsaPriv`, `unsigned char ctext[bytes_read]`
+     * 후행 조건: `unsigned char dtext[dsize]`
+   - PQC: `EVP_PKEY_CTX_new_from_pkey(NULL, priv, NULL) -> EVP_PKEY_decapsulate_init(kem, NULL) -> EVP_PKEY_decapsulate(kem, secret, &secret_len, header + MAGIC_LEN + 4, ct_len) -> EVP_DecryptInit_ex(cipher, EVP_aes_256_gcm(), NULL, secret, header + header_len - NONCE_LEN) -> EVP_DecryptUpdate(cipher, out_buf, &n, in_buf, (int)r) -> EVP_CIPHER_CTX_ctrl(cipher, EVP_CTRL_GCM_SET_TAG, TAG_LEN, tag) -> EVP_DecryptFinal_ex(cipher, out_buf, &n)`
+     * 선행 조건: `EVP_PKEY *priv`, `EVP_PKEY_CTX *kem`, `unsigned char secret[64]`, `unsigned char header[HEADER_MAX]`, `unsigned char tag[TAG_LEN]`
+     * 후행 조건: `unsigned char out_buf[CHUNK_LEN + EVP_MAX_BLOCK_LENGTH]`
 
 3. SYMMKEY 암호
    - Legacy: `DES_set_key(&rawkey, &keySched) -> DES_ncbc_encrypt((unsigned char *)&timeStamp, buff, sizeof(struct timeval), &keySched, (DES_cblock *)iv, DES_ENCRYPT)`
@@ -268,15 +284,15 @@
      * 선행 조건: `EVP_MD_CTX *ret_ctx`, `EVP_PKEY *pukey`, `unsigned char sign[sign_len]`, `unsigned char message[message_len]`
      * 후행 조건: `int verify_result`
 
-5. TLS 클라이언트 설정
-   - Legacy: `SSLv23_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL) -> SSL_CTX_load_verify_locations(ctx, CAfile, NULL)`
-     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
-     * 후행 조건: `SSL_CTX *ctx`
+5. TLS Client config
+   - Legacy: `SSL_library_init() -> SSL_load_error_strings() -> SSLv23_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_load_verify_locations(ctx, "CACert.pem", NULL) -> SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL) -> BIO_new_ssl_connect(ctx) -> BIO_get_ssl(sbio, &ssl) -> SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY) -> X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), "localhost", 0) -> BIO_set_conn_hostname(sbio, "127.0.0.1:4433") -> BIO_do_connect(sbio) -> BIO_do_handshake(sbio)`
+     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`, `SSL *ssl`, `BIO *sbio`
+     * 후행 조건: `SSL *ssl`, `BIO *sbio`
    - PQC: `TLS_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024") -> SSL_CTX_set1_sigalgs_list(ctx, "mldsa65")`
      * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
      * 후행 조건: `SSL_CTX *ctx`
 
-5. TLS 서버 설정
+5. TLS Server config 
    - Legacy: `SSLv23_server_method() -> SSL_CTX_new(meth) -> SSL_CTX_use_certificate_chain_file(ctx, cert_file) -> SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) -> SSL_CTX_check_private_key(ctx)`
      * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
      * 후행 조건: `SSL_CTX *ctx`

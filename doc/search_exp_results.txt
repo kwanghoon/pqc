@@ -1,0 +1,47 @@
+$ python3 test_search_crypto_api.py
+
+Pattern index:
+  1. EVP기반 CBC 복호
+  2. EVP기반 CBC 암호
+  3. RSA OAEP 기반 복호
+  4. RSA OAEP기반 암호
+  5. SYMMKEY 복호
+  6. SYMMKEY 암호
+  7. TLS Client config
+  8. TLS Server config
+  9. 검증
+  10. 난수/시드 생성
+  11. 서명
+  12. 키 생성
+--------------------------------------------------------------------------------
+SearchCryptoAPI.py test summary
+--------------------------------------------------------------------------------
+1. PASS    ch2/mkrand16.c | expected=[10] | matched=[10]
+2. PASS    ch2/pqc/pqc_mkrand16.c | expected=[10] | matched=[10]
+3. PASS    ch2/pqc/pqc_mldsa_genkey.c | expected=[12] | matched=[12]
+4. PASS    ch2/rsagenkey.c | expected=[12] | matched=[12]
+5. FP      ch3/aes_128_cbc.c | expected=[1, 2] | matched=[1, 2, 10] | extra=[10]
+6. FP      ch3/pqc/pqc_aes_256_cbc.c | expected=[1, 2] | matched=[1, 2, 10] | extra=[10]
+7. FP      ch4/pqc/pqc_mlkem_envelope.c | expected=[3, 4] | matched=[1, 2, 3, 4, 5, 6] | extra=[1, 2, 5, 6]
+8. FP      ch4/pqc/pqc_mlkem_file.c | expected=[3, 4] | matched=[1, 2, 3, 4, 5, 6] | extra=[1, 2, 5, 6]
+9. FP      ch4/rsa_des_crc.c | expected=[1, 2, 3, 4] | matched=[1, 2, 3, 4, 10] | extra=[10]
+10. PASS    ch4/rsatest.c | expected=[3, 4, 12] | matched=[3, 4, 12]
+11. PASS    ch5/pqc/pqc_mldsa_sign_test.c | expected=[9, 11] | matched=[9, 11]
+12. FP      ch5/rsa_sha1_sign_test.c | expected=[9, 11] | matched=[9, 11, 12] | extra=[12]
+13. PASS    ch7/hash_sign.c | expected=[9, 11] | matched=[9, 11]
+14. PASS    ch7/pqc/pqc_hash_sign.c | expected=[9, 11] | matched=[9, 11]
+15. FP      ch8/client0.c | expected=[6] | matched=[5, 6] | extra=[5]
+16. FP      ch8/pqc/pqc_client0.c | expected=[6] | matched=[2, 6] | extra=[2]
+17. FP      ch8/pqc/pqc_server0.c | expected=[5] | matched=[1, 5] | extra=[1]
+18. FP      ch8/server0.c | expected=[5] | matched=[5, 6] | extra=[6]
+19. PASS    ch9/pqc/pqc_ssl_client.c | expected=[7] | matched=[7]
+20. PASS    ch9/pqc/pqc_ssl_server.c | expected=[8] | matched=[8]
+21. PASS    ch9/ssl_client.c | expected=[7] | matched=[7]
+22. PASS    ch9/ssl_server.c | expected=[8] | matched=[8]
+--------------------------------------------------------------------------------
+Total files tested: 22
+Passed: 12
+False Positive: 10
+Failed: 0
+Pass rate: 54.55%
+False Positive rate: 45.45%
