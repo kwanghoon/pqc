@@ -255,10 +255,18 @@
      * 선행 조건: `EVP_MD_CTX *ret_ctx`, `EVP_PKEY *pukey`, `unsigned char sign[sign_len]`, `unsigned char message[message_len]`
      * 후행 조건: `int verify_result`
 
-5. TLS 설정
+5. TLS 클라이언트 설정
    - Legacy: `SSLv23_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL) -> SSL_CTX_load_verify_locations(ctx, CAfile, NULL)`
      * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
      * 후행 조건: `SSL_CTX *ctx`
    - PQC: `TLS_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024") -> SSL_CTX_set1_sigalgs_list(ctx, "mldsa65")`
+     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
+     * 후행 조건: `SSL_CTX *ctx`
+
+5. TLS 서버 설정
+   - Legacy: `SSLv23_server_method() -> SSL_CTX_new(meth) -> SSL_CTX_use_certificate_chain_file(ctx, cert_file) -> SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) -> SSL_CTX_check_private_key(ctx)`
+     * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
+     * 후행 조건: `SSL_CTX *ctx`
+   - PQC: `TLS_server_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024") -> SSL_CTX_set1_sigalgs_list(ctx, "mldsa65") -> SSL_CTX_use_certificate_chain_file(ctx, cert_file) -> SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) -> SSL_CTX_check_private_key(ctx)`
      * 선행 조건: `SSL_METHOD *meth`, `SSL_CTX *ctx`
      * 후행 조건: `SSL_CTX *ctx`
