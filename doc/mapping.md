@@ -213,33 +213,33 @@
    - 생성된 값이 키/IV/nonce의 입력으로 이어짐.
 
 2. 키 생성
-   - Legacy: `RSA_generate_key(...)` 또는 `EVP_PKEY_set1_RSA(...)`
-   - PQC: `EVP_PKEY_CTX_new_from_name(...)` → `EVP_PKEY_keygen_init(...)` → `EVP_PKEY_keygen(...)`
+   - Legacy: `RSA_generate_key(1024, RSA_F4, NULL, NULL)` 또는 `EVP_PKEY_set1_RSA(pkey, rsaPriv)`
+   - PQC: `EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL)` → `EVP_PKEY_keygen_init(ctx)` → `EVP_PKEY_keygen(ctx, &pkey)`
 
 3. 암호
-   - Legacy: `EVP_CipherInit_ex(...)` → `EVP_CipherUpdate(...)` → `EVP_CipherFinal_ex(...)`
-   - PQC: `EVP_EncryptInit_ex(...)` → `EVP_EncryptUpdate(...)`  → `EVP_EncryptFinal_ex(...)` 
+   - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_ENCRYPT) -> EVP_CipherUpdate(ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len) -> EVP_CipherFinal_ex(ctx, ciphertext + ciphertext_len, &ciphertext_len)`
+   - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_EncryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_EncryptUpdate(ret_ctx, ciphertext, &ciphertext_len, plaintext, plaintext_len) -> EVP_EncryptFinal_ex(ret_ctx, ciphertext + ciphertext_len, &ciphertext_len)`
 
 3. 복호
-   - Legacy: `EVP_CipherInit_ex(...)` → `EVP_CipherUpdate(...)` → `EVP_CipherFinal_ex(...)`
-   - PQC: `EVP_DecryptInit_ex(...)` → `EVP_DecryptUpdate(...)` → `EVP_DecryptFinal_ex(...)`   
+   - Legacy: `EVP_CipherInit_ex(ctx, EVP_aes_128_cbc(), NULL, mykey, iv, AES_DECRYPT) -> EVP_CipherUpdate(ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_CipherFinal_ex(ctx, decrypted + decrypted_len, &decrypted_len)`
+   - PQC: `ret_ctx = EVP_CIPHER_CTX_new() -> EVP_DecryptInit_ex(ret_ctx, EVP_aes_256_cbc(), NULL, mykey, iv) -> EVP_DecryptUpdate(ret_ctx, decrypted, &decrypted_len, ciphertext, ciphertext_len) -> EVP_DecryptFinal_ex(ret_ctx, decrypted + decrypted_len, &decrypted_len)`
 
 4. 서명
-   - Legacy: `EVP_PKEY_set1_RSA(...)` → `EVP_Sign...` / `EVP_Verify...`
-   - PQC: `EVP_DigestSignInit_ex(...)` → `EVP_DigestSign(...)`
+   - Legacy: `EVP_PKEY_set1_RSA(pkey, rsaPriv) -> EVP_SignInit_ex(ctx, EVP_sha1(), NULL) -> EVP_SignUpdate(ctx, message, message_len) -> EVP_SignFinal(ctx, sign, &sign_len, pkey)`
+   - PQC: `ret_ctx = EVP_MD_CTX_new() -> EVP_DigestSignInit_ex(ret_ctx, NULL, EVP_sha256(), NULL, pkey, NULL) -> EVP_DigestSign(ret_ctx, sign, &sign_len, message, message_len)`
 
 4. 검증
-   - Legacy: `EVP_PKEY_set1_RSA(...)` → `EVP_Sign...` / `EVP_Verify...`
-   - PQC: `EVP_DigestVerifyInit_ex(...)` → `EVP_DigestVerify(...)`
+   - Legacy: `EVP_PKEY_set1_RSA(pukey, rsaPub) -> EVP_VerifyInit_ex(ctx, EVP_sha1(), NULL) -> EVP_VerifyUpdate(ctx, message, message_len) -> EVP_VerifyFinal(ctx, sign, sign_len, pukey)`
+   - PQC: `ret_ctx = EVP_MD_CTX_new() -> EVP_DigestVerifyInit_ex(ret_ctx, NULL, EVP_sha256(), NULL, pukey, NULL) -> EVP_DigestVerify(ret_ctx, sign, sign_len, message, message_len)`
 
 5. TLS 설정
-   - Legacy: `SSLv23_client_method()` / `SSLv23_server_method()`
-   - PQC: `TLS_client_method()` / `TLS_server_method()` + `SSL_CTX_set_min_proto_version`, `SSL_CTX_set1_groups_list`, `SSL_CTX_set1_sigalgs_list`
+   - Legacy: `SSLv23_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL) -> SSL_CTX_load_verify_locations(ctx, CAfile, NULL)`
+   - PQC: `TLS_client_method() -> SSL_CTX_new(meth) -> SSL_CTX_set_min_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) -> SSL_CTX_set1_groups_list(ctx, "X25519MLKEM768:SecP384r1MLKEM1024") -> SSL_CTX_set1_sigalgs_list(ctx, "mldsa65")`
 
 6. use-def 관점의 핵심
    - `A = API(...)`에서 반환된 `A`가 뒤이어 `B(...)`의 인자로 전달될 때, 해당 연결을 use-def 관계로 간주한다.
-   - 예: `rsaPriv = RSA_generate_key(...)` → `RSA_private_decrypt(..., rsaPriv, ...)`
-   - 예: `key = EVP_PKEY_generate(...)` → `EVP_DigestSignInit_ex(..., key, ...)`
-   - 예: `ctx = SSL_CTX_new(meth)` → `SSL_CTX_set1_groups_list(ctx, ...)`
+   - 예: `rsaPriv = RSA_generate_key(...) -> RSA_private_decrypt(..., rsaPriv, ...)`
+   - 예: `key = EVP_PKEY_generate(...) -> EVP_DigestSignInit_ex(..., key, ...)`
+   - 예: `ctx = SSL_CTX_new(meth) -> SSL_CTX_set1_groups_list(ctx, ...)`
 
 이 문서는 chapter별 파일 매핑과 각 파일의 호출 순서, 리턴값 변수, use-def 관계를 함께 정리해 전환 전/후 코드의 데이터 흐름을 비교하는 데 사용하도록 작성되었다.
